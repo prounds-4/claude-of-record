@@ -1,0 +1,109 @@
+# ============================================================================
+# Schema: FieldReport record frontmatter
+# ============================================================================
+#
+# WHAT A FieldReport IS
+#   One daily / weekly site-observation report from a GC superintendent
+#   (or an owner-side / consultant observer). Forensic load HIGH: site
+#   events drive timelines, support delay claims, document changed conditions.
+#   Source: Originals/field-reports/{year}/.
+#
+# WHAT A FieldReport's references[] ARE
+#   references[] is the outbound graph: `mentions-rfi` / `mentions-asi` to an
+#   RFI / ASI named in the report text. The inbound side (referenced_by) is
+#   auto-maintained and carries `mentions` from records that cite the report.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a FieldReport record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema FieldReport vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every FieldReport record must carry all 11 of these ---
+required:
+  type: enum [FieldReport]
+  id: string                        # FieldReport-YYYY-MM-DD[-author-or-NN]
+  title: string
+  status: enum [observation, issue-flagged, follow-up-required, closed]
+  date: date                        # report date (site visit)
+  source_files: list                # see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only timeline (most reports carry an empty list)
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  report_date: date                 # explicit field date (may differ from ingested date)
+  author: string                    # superintendent / observer name or firm (v1 `report_by` folded in here at v2)
+  weather: string                   # weather conditions noted
+  report_no: integer                # the report's sequence number, when printed
+  report_time: string               # time of the site visit, e.g. "2:30 pm"
+  work_in_progress: string           # narrative summary of work observed that day
+  trades_on_site: list               # subcontractors present
+  issues_noted: list                 # deficiencies, conflicts, unsafe conditions
+  scope_areas: list                  # main building / annex / sitework / etc.
+  photos_attached: boolean
+  notes: string
+
+# Naming convention: FieldReport-YYYY-MM-DD[-{initials}|-NN].md
+# Originals subfolder: Originals/field-reports/{year}/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    sidecar: string
+    type: enum [prose-primary, prose-metadata, image-drawing]
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [mentions-rfi, mentions-asi]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  Several hundred records, the GC
+#       superintendent site-observation reports. The migration stripped from
+#       the records: deepener timestamps; probe ref-list scalars `rfi_refs` /
+#       `asi_refs` (graph twins of the references[] `mentions-rfi` /
+#       `mentions-asi` edges, the same probe-duplication pattern stripped
+#       from OAC); `notes_short` (a truncated notes probe); and
+#       `contractors_observed` (a garbage extraction: on one record it held a
+#       mis-captured checkbox-form fragment rather than a contractor list).
+#       Vocabulary fixes: the deepener used field names the schema did not.
+#       `report_by` was folded into `author` (on the few records carrying
+#       both, `report_by` was dropped and the main-ingest `author` kept);
+#       `areas_observed` (a work-narrative string, despite the name, e.g.
+#       "Walked the site to review ongoing site excavation") was renamed to
+#       `work_in_progress`. Two real fields the deepener surfaced were KEPT
+#       and newly declared: `report_no` and `report_time`. The v1 schema's
+#       `related_rfis` / `related_asis` optional list fields were removed;
+#       they duplicated the references[] graph and no record populated them.
+#       The references relationship enum was reconciled to the two values the
+#       records actually use (`mentions-rfi`, `mentions-asi`); the v1 enum
+#       matched nothing.
+#       Bodies: removed the probe-echo `## Extracted fields` and the
+#       hand-rendered outbound-reference sections; the malformed stub
+#       Summaries were regenerated across the type. Added schema_version, the
+#       governance header, this changelog. Required (11) field set unchanged.
+#       Note: every record carries `status: observation` and the substantive
+#       fields (work_in_progress on most, trades_on_site / issues_noted /
+#       scope_areas) are unpopulated, a bulk-ingest thinness gap registered
+#       in the known-bad-records register.
+#   v1  (original seed)  No schema_version; the closed-world check was off.
+#       The references enum and several optional field names described an
+#       imagined record, not the deepened corpus.
+# ============================================================================

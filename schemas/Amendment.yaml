@@ -1,0 +1,103 @@
+# ============================================================================
+# Schema: Amendment record frontmatter
+# ============================================================================
+#
+# WHAT AN Amendment IS
+#   An AIA-format modification of a base contract: an A102 amendment to the
+#   GC prime contract (Thornmere Builders), or a G802 amendment to the design
+#   architect's B101 (Atelier North). Per A201 section 1.1.1 the project's
+#   sweeping changes are executed as amendments to A102, not as standalone
+#   Change Orders, so the Amendment series is the spine of contract-sum
+#   growth. GC amendments and architect G802 amendments each run as their own
+#   numbered series.
+#
+# WHAT AN Amendment'S references[] ARE
+#   references[] is the single home of the graph: `amends` the base contract,
+#   `corrects` a prior amendment, `bundles-pcco` the PCCOs it executes,
+#   `funds-asi` / `funds-bid-package` the scope it funds. There are no parallel
+#   referenced_pccos / referenced_asis / referenced_bid_packages scalar lists;
+#   v1-era records carried them and v2 removed them as graph duplication.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an Amendment record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Amendment vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Amendment record must carry all 11 of these ---
+required:
+  type: enum [Amendment]
+  id: string                        # Amendment-GC-NN or Amendment-Architect-NNN
+  title: string
+  status: enum [executed, draft, superseded]
+  date: date                        # effective / execution date on the cover page
+  party: enum [GC, Architect]       # role-generic slugs; the private wiki listed the
+                                    # actual firms here (substituted at extraction)
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  revision: string                  # e.g. R1, R4, drawn from the body, not the filename
+  amendment_amount: number_or_null   # cover-page increment; null when not stated explicitly
+  docusign_envelope_id: string
+  asr_references: list               # architect amendments only, Architect's Service Request exhibit references
+  notes: string
+
+# Naming convention: Amendment-GC-NN.md / Amendment-Architect-NNN.md
+# Originals subfolder: Originals/contracts/GC-Prime-Contract/Amendments/ ,
+#                      Originals/contracts/Architect-Agreement/Amendments/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, image-drawing]
+  optional:
+    sidecar: string                 # required for every prose-* type
+    ocr_pdf: string                 # for image-only originals that were OCR'd
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [amends, corrects, supersedes, completes-scope, funds-asi, bundles-pcco, funds-bid-package, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  Reconciled against the live record set,
+#       including a handful of records created clean in a contract-lineage
+#       detangle pass. The migration stripped the deepener layer from the
+#       older records: deepener timestamps; largest-dollar and dollar-count
+#       probe fields; an amendment_label field redundant with id; a raw
+#       deepener date string sometimes equal to `date`; and the scalar
+#       reference lists referenced_asis / referenced_pccos /
+#       referenced_bid_packages (graph duplication, the edges live in
+#       references[]). Bodies: removed the probe-echo "Extracted fields" and
+#       the hand-rendered outbound/inbound reference sections, and rewrote the
+#       stub summaries.
+#       Schema: references relationship enum reconciled to the values the
+#       records actually use plus `supersedes`; added `bundles-pcco` and
+#       `funds-bid-package` (used by the records, undeclared by v1); removed
+#       four v1-declared values used by no record. Removed the optional
+#       `cumulative_contract_sum_after` (declared by v1, used by no record).
+#       source_files_item `sidecar` moved to optional. Added schema_version,
+#       the governance header, this changelog.
+#       Spot-checked `amendment_amount` against source cover sheets.
+#   v1  (original seed)  Only a /lint-wiki + /ingest header. No schema_version;
+#       the closed-world check was off, so the deepener layer and the scalar
+#       reference lists went unflagged.
+# ============================================================================

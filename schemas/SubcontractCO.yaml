@@ -1,0 +1,105 @@
+# ============================================================================
+# Schema: SubcontractCO (Subcontractor Change Order) record frontmatter
+# ============================================================================
+#
+# WHAT A SubcontractCO IS
+#   A change order that modifies a Subcontract: a GC-to-subcontractor CO or
+#   an owner-to-direct-consultant CO. Each carries the standard CO cover-sheet
+#   math (original sum, net of previous COs, this change, new sum).
+#
+#   Distinct from:
+#     - PrimeCO        : owner-to-prime / owner-to-architect CO (the prime side)
+#     - Change / PCCO  : prime-contract change lifecycle, executed via Amendment
+#     - Amendment      : AIA-format modification of a prime agreement
+#
+# WHAT A SubcontractCO'S references[] ARE
+#   references[] is the single home of the graph: `modifies-subcontract` to the
+#   parent Subcontract, `references-asi`, `supersedes`.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a SubcontractCO record
+#   may contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema SubcontractCO vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every SubcontractCO record must carry all 12 of these ---
+required:
+  type: enum [SubcontractCO]
+  id: string                        # SubcontractCO-{vendor-slug}-NN-YYYY-MM-DD
+  title: string
+  status: enum [draft, issued, executed, superseded, withdrawn, unknown]
+  date: date                        # CO date
+  vendor: string                    # firm name (e.g. Summit Steel, TrueTest Labs, Lakeside Planning)
+  co_number: string                 # the CO number as labeled by the source (e.g. "SS-01")
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  contracting_party: enum [GC, Owner, Architect, AOR]   # who issued the CO.
+                                    # Role-generic substitution for the project's real party names.
+  scope: string                     # brief CO scope description
+  # --- CO cover-sheet math (all four appear together on a standard CO sheet) ---
+  original_contract_sum: number     # "the original contract sum was"
+  previous_co_total: number         # "net amount of previous change orders"
+  this_change_amount: number        # "total amount of this change order", the net of THIS CO
+  new_contract_sum: number          # "new contract amount, including change order"
+  related_subcontract: string       # path to the parent records/contracts/Subcontract-*.md
+  parent_pco: string                # path to records/pcos/PCO-NNN.md (GC subs only)
+  parent_pcco: string               # path to records/pccos/PCCO-NNN.md (GC subs only)
+  notes: string
+
+# Naming convention: SubcontractCO-{vendor-slug}-NN-YYYY-MM-DD.md
+# Originals subfolder: Originals/change-orders/_import/{vendor}/CO No {VENDOR}-NN/
+# SubcontractCO is not an events-bearing type; there is no events[] field.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata]
+  optional:
+    sidecar: string                 # the .pdf sources carry .txt sidecars; some .docx sources do not
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [modifies-subcontract, references-asi, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. SubcontractCO is the sub-side analogue of PrimeCO, same CO
+#       cover-sheet structure. The migration stripped from the records: a
+#       truncated enrichment text fragment, a duplicate of co_number, the
+#       enrichment bookkeeping fields, and the source-scan probe family
+#       (text chars, largest dollar, dollar counts, document kind, date
+#       counts, page counts, scraped CE refs).
+#       Schema reconciled to the records' real financial model: v1 declared a
+#       single `co_amount`; the records carry the full CO cover-sheet math, so
+#       `co_amount` was replaced by the four fields original_contract_sum /
+#       previous_co_total / this_change_amount / new_contract_sum (the records
+#       already used these names, the same fix the PrimeCO v2 reconciliation
+#       made). Bodies: removed the probe-echo "## Extracted fields" and the
+#       one hand-rendered "## References (outbound)" section, rewrote the stub
+#       summaries. references[]: one probe CE-number scrape edge (an
+#       undeclared relationship) was dropped. Added schema_version, the
+#       governance header, this changelog; `source_files_item` `sidecar`
+#       moved to optional. Required (12) field set unchanged.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off. Declared only `co_amount` for CO money.
+# ============================================================================

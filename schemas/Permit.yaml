@@ -1,0 +1,111 @@
+# ============================================================================
+# Schema: Permit record frontmatter
+# ============================================================================
+#
+# WHAT A Permit IS
+#   One record per permit number / permit application. Successive submissions,
+#   revisions, conditions, and issuances accumulate as events[] entries on the
+#   same record (the RFI-style lifecycle model, not a new record per
+#   submission). Covers building / mechanical / electrical / ROW-encroachment /
+#   revocable permits and the permit-adjacent "loose" filings.
+#
+# WHAT A Permit'S references[] ARE
+#   references[] is the single home of the graph: the agreement a permit is
+#   `submitted-under`, the RFI / ASI / drawing it references, `supersedes` for
+#   a reissued permit.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Permit record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Permit vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Permit record must carry all 13 of these ---
+required:
+  type: enum [Permit]
+  id: string                        # Permit-{permit-no}, keep dashes/dots as-is (e.g. Permit-23-04567-01)
+  title: string
+  status: enum [applied, in-review, conditional, issued, revoked, withdrawn, expired, unknown]
+  date: date                        # initial application date, see the v2 changelog caveat
+  permit_no: string                 # exactly as issued by the authority
+  issuing_authority: string         # the City, the County, the state building department, ...
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list                # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only: every submission, response, condition, issuance; see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  permit_type: string               # building, mechanical, electrical, plumbing, fire, ROW-encroachment, revocable, ...
+  scope_summary: string             # one sentence
+  applicant: string                 # who submitted (e.g. "A. Rivera, Crestview Architects")
+  project_address: string
+  issue_date: date_or_null
+  expiration: date_or_null
+  conditions: string                # short prose summary of conditions, if any
+  notes: string
+
+# Naming convention: Permit-{permit-no}.md   ...   Originals subfolder: Originals/permits/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-snapshot, image-drawing]
+  optional:
+    sidecar: string                 # required for every prose-* type
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [submitted-under, references-rfi, references-asi, references-drawing, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# --- nested: each entry in events[] (append-only permit lifecycle) ---
+events_item:
+  required:
+    date: date
+    type: enum [submission, response, condition, approval, revision]
+    detail: string
+  optional:
+    source: string                  # sidecar path (+ line range) behind the event
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. The migration stripped the enrichment-pass probe family from the
+#       records: source-scan counters (text chars, document kind, date counts,
+#       page counts, dollar counts), a numbered-items counter, a status
+#       keyword scrape, a duplicate of permit_no, and the enrichment
+#       bookkeeping fields. Bodies: removed the probe-echo "## Extracted
+#       fields" sections; a hand-authored "## Forensic note" was kept.
+#       Verification finding: the status keyword scrape was a false signal.
+#       It had tagged several municipal revocable-permit applications with an
+#       issued-style status by matching a word in the form's indemnity
+#       boilerplate. Those records are unsigned application forms; their
+#       `status` was corrected to `applied` and `issuing_authority` was set to
+#       the City.
+#       Added: schema_version; the governance header; the events_item shape
+#       (v1 named the event vocabulary in a trailing comment only); this
+#       changelog. Required (13) and optional (8) field sets unchanged.
+#       KNOWN-BAD (registered in .claude/health/known-bad-records.md): the
+#       municipal revocable-permit records carry the ingest date in `date`
+#       (the unsigned application forms give no application date), and
+#       `status` stays a placeholder `unknown` on records without a clear
+#       source signal. Correcting those needs a Permit buildout ingestion
+#       pass.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off, so the probe family went unflagged.
+# ============================================================================

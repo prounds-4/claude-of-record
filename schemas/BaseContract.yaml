@@ -1,0 +1,115 @@
+# ============================================================================
+# Schema: BaseContract record frontmatter
+# ============================================================================
+#
+# WHAT A BaseContract IS
+#   A base agreement of the project, not an amendment to one. There are two
+#   families: the GC prime contract (the AIA A102 agreement and its A201
+#   General Conditions, held by Thornmere Builders) and the design architect
+#   agreement (AIA B101, held by Atelier North, across its successive
+#   generations). Amendments to these live in their own Amendment records,
+#   not here.
+#
+# WHAT A BaseContract'S references[] ARE
+#   references[] is the single home of the graph: `supersedes` to a replaced
+#   prior generation, `amends` when a later generation is an amended form of an
+#   earlier one (not a replacement), `incorporated-by` for the A201/A102
+#   pairing. Amendments and pay apps point AT a BaseContract; those inbound
+#   edges live in referenced_by[], which /resolve-refs maintains.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a BaseContract record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema BaseContract vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 3
+
+# --- REQUIRED: every BaseContract record must carry all 12 of these ---
+required:
+  type: enum [BaseContract]
+  id: string                        # e.g. BaseContract-GC-A102, BaseContract-Architect-2024
+  title: string
+  status: enum [active, superseded, underlying]   # underlying = still in force, but the operative form is an amended later generation
+  date: date                        # agreement / execution date
+  party: enum [GC, Architect]       # the counterparty; the owner is always Ridgeline Ventures LLC.
+                                    # Role-generic slugs; the private wiki listed the actual
+                                    # firms here (substituted at extraction)
+  aia_form: enum [A102, A201, B101]
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source document supports them ---
+optional:
+  effective_date: date              # often same as date, kept distinct when the document distinguishes them
+  modifications_from_standard: string  # for A201 modified, body section header reference
+  notes: string
+
+# Naming convention: BaseContract-{GC|Architect}-{form-or-year}.md
+# Originals subfolder: Originals/contracts/GC-Prime-Contract/ , Originals/contracts/Architect-Agreement/
+# BaseContract is not an events-bearing type; there is no events[] field.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    sidecar: string
+    type: enum [prose-primary, prose-metadata]
+  optional:
+    ocr_pdf: string                 # for image-only originals that were OCR'd
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [supersedes, amends, incorporated-by, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v3  (architect-contract lineage fix)  The v2 reconciliation left one open
+#       item: the latest-generation architect B101 record was labeled
+#       `supersedes` toward the prior generation, but the later document is
+#       the prior B101 expanded by a G802 amendment, an amended form of the
+#       earlier agreement, not a replacement of it. Two schema values were
+#       added to model this honestly: `amends` in the references relationship
+#       enum (the later generation now `amends` the earlier one), and
+#       `underlying` in the status enum (the earlier generation moved from
+#       `superseded` to `underlying`, still in force as the base text, with
+#       the operative form being the amended later generation). The earliest
+#       lineage leg was source-checked and is a genuine supersession (a
+#       separately negotiated full-design contract for all phases), so it
+#       stays `superseded`. The deeper option of demoting the later generation
+#       to an Amendment record was considered and deferred to the
+#       Amendment-type reconciliation, where both types can be modeled
+#       consistently in one pass.
+#   v2  (schema reconciliation)  A small record set, all of which carried a
+#       large deepener probe family from a bulk deepen pass; the migration
+#       stripped it from every record (largest-dollar, dollar-count,
+#       date-count, document-kind, text-length, and cross-ref text-scrape
+#       probes, plus duplicated extracted_* twins and deepener timestamps).
+#       The probe family was unsalvageable: the document-kind guess was wrong
+#       on every record (an A102 prime contract tagged as a change order, a
+#       B101 tagged as a permit); the form-text probe misread the B101s; the
+#       cross-ref and parties probes were text-scrape heuristics, not curated
+#       facts. Also dropped in migration: one undeclared graph edge that was
+#       the twin of a garbage probe field. Bodies: removed the probe-echo
+#       "Extracted fields" sections and the hand-rendered outbound/inbound
+#       reference sections (the frontmatter graph is the single home;
+#       /resolve-refs maintains it). Stub summaries were rewritten; the one
+#       rich forensic body (key-clause analysis) was kept. Added:
+#       schema_version; the governance header; this changelog. The required
+#       (12) and optional (3) field sets are unchanged from v1.
+#   v1  (original seed)  No schema_version; the closed-world check was off, so
+#       the probe family went unflagged.
+# ============================================================================

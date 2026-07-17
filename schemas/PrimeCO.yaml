@@ -1,0 +1,118 @@
+# ============================================================================
+# Schema: PrimeCO (Prime Change Order) record frontmatter
+# ============================================================================
+#
+# WHAT A PrimeCO IS
+#   An owner-to-prime / owner-to-architect change order from the pre-AIA-
+#   Amendment era. PrimeCOs predate the formal Amendment-as-Modification
+#   process (A201 Section 1.1.1): they modify the prime contract directly,
+#   without going through an A102/B101 Amendment. Each carries the standard CO
+#   cover-sheet math (original sum, net of previous COs, this change, new sum).
+#
+#   Distinct from:
+#     - Amendment      : AIA-format (A102/B101 + G802) modification
+#     - SubcontractCO  : GC-to-sub or owner-to-direct-consultant CO on a Subcontract
+#     - Change / PCCO  : the GC-side CE/PCO/PCCO lifecycle within the prime
+#
+# WHAT A PrimeCO'S references[] ARE
+#   references[] is the single home of the graph: `modifies-prime` to the base
+#   contract it changes, `supersedes`, `folded-into-amendment` if the CO was
+#   later absorbed into an AIA Amendment. (The design-architect PrimeCOs are
+#   currently left unlinked: they overlap the architect's G802 amendment
+#   series, and linking them is part of the deferred architect-contract-lineage
+#   modeling, see the changelog.)
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a PrimeCO record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema PrimeCO vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every PrimeCO record must carry all 12 of these ---
+required:
+  type: enum [PrimeCO]
+  id: string                        # PrimeCO-{prime-slug}-NN-YYYY-MM-DD
+  title: string
+  status: enum [draft, issued, executed, superseded, withdrawn, unknown]
+  date: date                        # CO date
+  prime: enum [GC, Architect, AOR]  # which prime contract this CO modifies.
+                                    # Role-generic substitution for the project's real firm names.
+  co_number: string                 # the CO number as labeled by the source (e.g. "GC-01", "ARCH-04")
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source document supports them ---
+optional:
+  contracting_party: enum [Owner]   # always the owner entity for owner-side COs.
+                                    # Role-generic substitution for the real owner LLC name.
+  scope: string                     # brief CO scope description
+  # --- CO cover-sheet math (all four appear together on a standard CO sheet) ---
+  original_contract_sum: number     # "the original contract sum was"
+  previous_co_total: number         # "net amount of previous change orders"
+  this_change_amount: number        # "total amount of this change order", the net of THIS CO
+  new_contract_sum: number          # "new contract amount, including change order"
+  related_amendment: string         # path to a later Amendment record if this CO was folded into one
+  era: enum [pre-amendment, post-amendment]   # pre-amendment for the historical GC/architect bundle
+  notes: string
+
+# Naming convention: PrimeCO-{prime-slug}-NN-YYYY-MM-DD.md  (e.g. PrimeCO-GC-01-2021-03-15.md)
+# Originals subfolder: Originals/change-orders/_import/{gc|architect}/CO No {GC|ARCH}-NN/
+# PrimeCO is not an events-bearing type; there is no events[] field.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata]
+  optional:
+    sidecar: string                 # the .pdf sources carry .txt sidecars; the .docx sources do not
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [modifies-prime, supersedes, folded-into-amendment]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. The migration stripped four undeclared keys from all records:
+#         a truncated enrichment text fragment, a duplicate of co_number, and
+#         the enrichment bookkeeping fields.
+#       Schema reconciled to the records' real financial model: v1 declared a
+#         single co_amount; the records carry the full CO cover-sheet math, so
+#         co_amount was replaced by the four fields original_contract_sum /
+#         previous_co_total / this_change_amount / new_contract_sum (the
+#         records already used these names). source_files_item `sidecar` made
+#         optional (the .docx sources have no sidecar; the sibling .pdf
+#         sources do).
+#       Verification re-checked every figure against the CO cover sheets in
+#         Originals/change-orders/: all records match their source exactly.
+#         Verification of this class is also where cover-sheet math errors
+#         surface: a CO ladder whose "net of previous change orders" does not
+#         chain to the prior CO's stated contract sum is a real failure mode.
+#         When found, capture the source faithfully and register the
+#         discrepancy; never silently repair the counterparty's arithmetic.
+#       Bodies: removed the probe-echo "## Extracted fields" sections and
+#         rewrote the stub summaries from the verified cover sheets.
+#       Added schema_version, governance header, this changelog. Required (12)
+#         field set unchanged. references[] left empty on all records: linking
+#         the architect PrimeCOs to the architect contract is entangled with
+#         the architect-contract-lineage remodeling deferred to the Amendment
+#         reconciliation.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off. Declared only co_amount for CO money.
+# ============================================================================

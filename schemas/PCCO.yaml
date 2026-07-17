@@ -1,0 +1,99 @@
+# ============================================================================
+# Schema: PCCO (Prime Contract Change Order) record frontmatter
+# ============================================================================
+#
+# WHAT A PCCO IS
+#   A PCCO is an executed change-order bundle. It bundles several priced PCOs
+#   (and the CEs under them) into one unit, executed via an Amendment.
+#   Lifecycle:
+#       Change (CE) --priced--> PCO --bundled-into--> PCCO --executed-via--> Amendment
+#   PCCO records were ingested from the GC's PCCO-Log xlsx and pay-app
+#   snapshots; standalone per-PCCO source documents do not exist in the corpus.
+#
+# WHAT A PCCO'S references[] ARE
+#   A PCCO's references[] is its bundle: the PCOs and CEs it bundles, the ASIs
+#   and RFIs that triggered them, and the Amendment that executed it. That is
+#   the single home for the bundle. There are no parallel bundled_pcos /
+#   bundled_ces / log_*_refs fields.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a PCCO record may contain.
+#   To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema PCCO vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being reconciled;
+#   it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every PCCO record must carry all 11 of these ---
+required:
+  type: enum [PCCO]
+  id: string                       # PCCO-NNN (zero-padded 3-digit)
+  title: string
+  status: enum [approved, rejected, pending, superseded]
+  date: date                       # PCCO execution date
+  pcco_number: number              # NNN as a number, for sorting
+  source_files: list               # what the record was built from, see source_files_item
+  references: list                 # the bundle and its triggers, see references_item
+  referenced_by: list              # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when supported ---
+optional:
+  approved_amount: number          # the executed change-order dollar value of the PCCO
+  events: list                     # append-only timeline, see events_item; usually empty for a PCCO
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, prose-snapshot, structured-canonical, image-drawing]
+  optional:
+    sidecar: string                # required for every prose-* type
+    snapshot_date: date            # required for prose-snapshot
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string                 # relative path, e.g. records/pcos/PCO-047.md, records/changes/Change-0012.md
+    relationship: enum [bundles-pco, bundles-ce, triggered-by-asi, triggered-by-rfi, executed-via-amendment, supersedes]
+  optional:
+    status: enum [pending-target]   # target record not yet ingested; warns, never fails lint
+  # A `bundles-pco` reference points at records/pcos/PCO-NNN.md (a PCO), never at
+  # a Change record. A `bundles-ce` reference points at records/changes/Change-NNNN.md.
+
+# --- nested: each entry in events[] (append-only timeline) ---
+events_item:
+  required:
+    date: date
+    type: enum [bundled, approved, superseded, corrected, executed]
+    note: string
+  optional:
+    by: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. The v1 schema had declared PCCO a future type with no records.
+#       Removed: the undeclared log-ingestion field family (log_xlsx_coverage,
+#         log_xlsx_snapshot, log_xlsx_row_count, log_xlsx_total, log_xlsx_status,
+#         log_pco_refs, log_ce_refs, log_asi_refs, log_rfi_refs); a duplicate
+#         dollar field; the empty bundled_pcos / bundled_ces (the bundle lives
+#         only in references[]); enrichment-pass bookkeeping fields; and two
+#         fields declared by v1 but used by no record.
+#       Fixed in migration: `bundles-pco` references repointed from
+#         records/changes/Change-NNNN.md to records/pcos/PCO-NNN.md.
+#       Added: pcco_number promoted to required; triggered-by-asi / triggered-by-rfi
+#         added to the references relationship enum; events_item shape; schema_version
+#         and the governance header. The stale "future entity type" header was
+#         replaced once the type had a real record population.
+#   v1  Original seed schema. Marked PCCO a future type; its bundled_pcos /
+#       bundled_ces / parent_amendment fields went unused while the log-ingestion
+#       handler wrote a parallel undeclared log_* family carrying the real data.
+# ============================================================================

@@ -1,0 +1,101 @@
+# ============================================================================
+# Schema: ASI (Architect's Supplemental Instructions) record frontmatter
+# ============================================================================
+#
+# WHAT AN ASI IS
+#   An Architect's Supplemental Instructions issuance. The architect of record
+#   and/or the design architect clarify or modify the documents without (per
+#   A201 section 7.4) affecting cost/time. An ASI is a source-of-truth
+#   instrument: it routinely triggers downstream PCOs and CEs that DO carry
+#   cost/time. An ASI is typically a bundle of 5-10 PDFs (TOC, narrative of
+#   changes, NTC document list, CSI specs, NTC drawings), classified by
+#   source_files[].type.
+#
+# WHAT AN ASI'S references[] ARE
+#   references[] is the single home of the graph: `triggered-by-rfi` /
+#   `references-rfi` to the RFIs behind the ASI, `supersedes-asi` to a prior
+#   ASI. There is no parallel referenced_rfis scalar list; v1-era records
+#   carried one and v2 removed it as graph duplication.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an ASI record may contain.
+#   To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema ASI vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every ASI record must carry all 11 of these ---
+required:
+  type: enum [ASI]
+  id: string                        # ASI-NN
+  title: string
+  status: enum [issued, withdrawn, superseded]
+  date: date                        # issuance date
+  issuing_party: enum [architect-of-record, design-architect, joint]
+                                    # role-generic slugs; the private wiki listed the
+                                    # actual firms here (substituted at extraction)
+  source_files: list                # often a bundle of 5-10 PDFs, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  asi_number: string                # NN or NN-NN format
+  bundle_path: string                # path to the bundle folder under Originals/asis/
+  affected_drawings: list            # sheet numbers from the narrative (e.g. [A3.502, A6.115])
+  affected_specs: list               # CSI section numbers (e.g. ["06 40 23", "09 64 00"])
+  notes: string
+
+# Naming convention: ASI-NN.md   /   Originals subfolder: Originals/asis/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, prose-spec, image-drawing, prose-snapshot, structured-canonical]
+  optional:
+    sidecar: string                  # required for prose-* types; image-drawing / structured-canonical may omit it
+    section: string                  # prose-spec: CSI section number
+    title: string                    # prose-spec: section title
+    sheet: string                    # image-drawing: sheet number (SK-01-04, etc.)
+    snapshot_date: date              # prose-snapshot / structured-canonical
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [triggered-by-rfi, references-rfi, supersedes-asi, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  Reconciled against the live record set. The
+#       migration stripped machine-probe artifacts the bulk deepener had left
+#       on records (deepener timestamps, keyword-count and text-scrape probe
+#       fields, and a referenced_rfis scalar list that duplicated the
+#       references[] graph). One probe count was demonstrably unreliable: a
+#       record with 20 affected drawings carried a revised-count of 0.
+#       Field-name reconciliation went in the records' favor: v1 declared
+#       `drawings_affected` / `spec_sections_affected` but nearly all records
+#       used `affected_drawings` / `affected_specs`, so the schema was renamed
+#       to the names in use and the single outlier record migrated.
+#       The references relationship enum was reconciled to the values in use:
+#       added `triggered-by-rfi` (heavily used, undeclared by v1); removed two
+#       v1-declared values used by no record. source_files_item `sidecar` moved
+#       to optional. Added schema_version, governance header, this changelog.
+#       KNOWN-BAD (registered): two records carried an identical bulk-extracted
+#       RFI list (a bad extraction) and have empty references[]; their real
+#       RFI cross-refs need source derivation.
+#   v1  (original seed)  No schema_version; the closed-world check was off, so
+#       the probe family and the scalar reference list went unflagged.
+# ============================================================================

@@ -1,0 +1,134 @@
+# ============================================================================
+# Schema: Inspection record frontmatter
+# ============================================================================
+#
+# WHAT AN Inspection IS
+#   One third-party inspection / test report. The corpus has two large
+#   populations:
+#     - concrete cylinder compressive-strength break tests (regional
+#       materials-testing labs), the `concrete-cylinder` inspection_type
+#     - structural-steel weld monitoring / NDE / fabrication audits
+#       (e.g. TrueTest Labs), the weld-monitoring / UT / MT / VT types
+#   Each report is one Record; a re-issued report gets a new Record with a
+#   rev.N suffix, originals are never overwritten.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an Inspection record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Inspection vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Inspection record must carry all 12 of these ---
+required:
+  type: enum [Inspection]
+  id: string                        # Inspection-{YYYY-MM-DD}-{lab-shortcode}-{descriptor}
+  title: string
+  status: enum [accepted, repairs-required, pending-review, mixed, unknown]
+  date: date                        # inspection date (not report-issue date)
+  lab: string                       # short name, e.g. TrueTest Labs
+  inspection_type: enum [weld-monitoring, UT, MT, PT, VT, dimensional, fabrication-audit, concrete-cylinder, other]
+  source_files: list                # see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  # --- general ---
+  lab_report_id: string             # external lab's report ID (e.g. R25-0042-0100)
+  report_no: string                 # the report's own number
+  revision: string                  # rev.0, rev.1, ...
+  inspector: string                 # name + cert
+  subject: string                   # one-line subject of the report
+  scope_summary: string             # one sentence on what was inspected
+  findings: string                  # short prose summary of observations
+  has_rejections: boolean            # the inspection recorded any rejections
+  acceptance_standard: string        # AWS D1.1-2020, etc.
+  acceptance_criteria: string
+  standard_used: string              # the code/standard the inspection applied
+  compliance_statement: string
+  task: string
+  notes: string
+  # --- weld / NDE / fabrication-audit ---
+  fabricator: string                # e.g. Summit Steel
+  location: string                  # Fab-Shop | Site | ...
+  job_no: string
+  welding_process: string
+  nde_required: boolean
+  reference_codes: list
+  pieces_inspected: list             # piece IDs as the fabricator labels them (A1001, A1002, ...)
+  # --- concrete cylinder break test ---
+  specimen_id: string                # e.g. "Cyl 2504"
+  specimen_size: string              # e.g. '4" X 8"'
+  sample_no: string
+  mix_design: string
+  supplier: string                   # concrete supplier
+  placement_location: string         # where the concrete was placed
+  target_psi: number                 # the mix's design strength
+  break_psi_7d: list                 # 7-day break results (psi)
+  break_psi_28d: list                # 28-day break results (psi)
+  low_strength_flag: boolean          # a break came in under target
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    sidecar: string
+    type: enum [prose-primary, image-drawing]
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [references-rfi, references-drawing, references-ncr, inspects-fabricator, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  Over a thousand records. The headline
+#       finding: the v1 schema was written for weld / NDE / fabrication-audit
+#       reports, but more than half the records are concrete cylinder
+#       compressive-strength break tests from a regional materials-testing
+#       lab, a whole second inspection population the schema never modeled.
+#       Those records carried a dozen undeclared concrete-test fields and were
+#       all typed `inspection_type: other` for want of a real type. v2 adds
+#       `concrete-cylinder` to the inspection_type enum and the migration
+#       retypes the `other` records that carry `target_psi` to
+#       `concrete-cylinder` (the few `other` records without target_psi stay
+#       `other`). The concrete-test fields were KEPT and newly declared
+#       (specimen_id / specimen_size / sample_no / mix_design / supplier /
+#       placement_location / target_psi / break_psi_7d / break_psi_28d /
+#       low_strength_flag), as were the weld-side fields (has_rejections /
+#       subject / standard_used / job_no / welding_process / nde_required /
+#       reference_codes) and three hand-built-record fields
+#       (acceptance_criteria / compliance_statement / task). Stripped: the
+#       deepener artifacts (timestamps, an extraction-quality tag);
+#       `findings_short` (a truncated `findings` probe); two text-date probes
+#       (`date` is the canonical field); and the source_* probe family
+#       (document-kind, cross-ref, text-length, page-count, date-count
+#       scrapes). Renamed `report_number` -> `report_no` (a few records used
+#       the long form; the vast majority already used report_no). The unused
+#       `events` optional was dropped (0 records; inspections are
+#       point-in-time). Bodies: removed the probe-echo `## Extracted fields`
+#       and the hand-rendered inbound-reference sections; the hand-built
+#       records (## Inspection details / ## Specimen details / ## Findings)
+#       kept their bodies verbatim; stub Summaries regenerated. Added
+#       schema_version, the governance header, this changelog. Required (12)
+#       field set unchanged. Note: nearly every record carries
+#       `status: unknown`, a bulk-ingest gap registered in the
+#       known-bad-records register (the accept/reject/repairs disposition of
+#       each inspection is the forensic payload and is not in the records).
+#   v1  (original seed)  No schema_version; the closed-world check was off.
+#       Modeled only the weld/NDE population; the concrete-cylinder records
+#       had no declared home for their fields.
+# ============================================================================

@@ -1,0 +1,99 @@
+# ============================================================================
+# Schema: QualityReport record frontmatter
+# ============================================================================
+#
+# WHAT A QualityReport IS
+#   Quality-assurance documentation, typically a weekly OAC Quality Report or
+#   a discipline QA site-walk observation report. Distinct from Inspection
+#   (third-party NDE / weld monitoring) and from FieldReport (GC
+#   superintendent general site observations).
+#
+# WHAT A QualityReport'S references[] ARE
+#   references[] is the single home of the graph: `observes` the work,
+#   `escalates-to-ncr` when a deficiency is formalized, `relates-to-rfi` /
+#   `relates-to-asi` to related instruments. There is no parallel rfi_refs
+#   scalar list; v1-era records carried one and v2 removed it as graph
+#   duplication.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a QualityReport record
+#   may contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema QualityReport vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every QualityReport record must carry all 10 of these ---
+required:
+  type: enum [QualityReport]
+  id: string                        # QualityReport-YYYY-MM-DD-NN
+  title: string
+  status: enum [observation, deficiency-noted, corrective-action-pending, closed, unknown]
+  date: date
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  report_date: date                 # report-compiled date, when distinct from the observation date
+  author: string                    # QA inspector / firm
+  scope_area: string                # Tower / Annex / Sitework / Mechanical / etc. (your project's scope areas)
+  inspection_type: string           # workmanship / install QC / mockup review / site-walk observation / etc.
+  deficiencies: list                # issues observed
+  corrective_actions: list          # corrections required
+  related_ncrs: list                # NCR numbers if a deficiency escalated
+  notes: string
+
+# Naming convention: QualityReport-YYYY-MM-DD-NN.md (NN = sequence within the day)
+# Originals subfolder: Originals/quality-reports/{year}/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, image-drawing]
+  optional:
+    sidecar: string                 # required for prose-primary
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [observes, escalates-to-ncr, relates-to-rfi, relates-to-asi, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus (mostly thin weekly OAC Quality
+#       Report stubs) in a full-type reconciliation pass. The migration
+#       stripped from the records: the enrichment bookkeeping fields and
+#       extraction-quality tag; two derivable probe counts; the source-scan
+#       probe family (text chars / document kind / date counts / page counts /
+#       scraped RFI refs); and the rfi_refs scalar list (graph duplication).
+#       Bodies: the stub records had their probe-echo "## Extracted fields"
+#       and one hand-rendered "## References (outbound)" section removed and a
+#       clean Summary regenerated; one hand-curated site-walk report body was
+#       kept untouched.
+#       references[]: the one `mentions-rfi` relationship was migrated to the
+#       enum's `relates-to-rfi`; an RFI link shared by three consecutive
+#       weekly reports (e.g. RFI-1204) was moved into references[] as a
+#       `relates-to-rfi` edge on the records that lacked it.
+#       Added schema_version, the governance header, this changelog;
+#       source_files_item `sidecar` moved to optional. Required (10) and
+#       optional (8) field sets unchanged.
+#       KNOWN-BAD (registered): the weekly OAC QualityReport stubs are thin;
+#       `status` is `unknown` on nearly all records; setting real statuses and
+#       populating deficiencies / corrective_actions needs a buildout pass.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off, so the probe family went unflagged.
+# ============================================================================

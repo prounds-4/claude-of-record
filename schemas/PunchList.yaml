@@ -1,0 +1,105 @@
+# ============================================================================
+# Schema: PunchList record frontmatter
+# ============================================================================
+#
+# WHAT A PunchList IS
+#   A point-in-time export of the Procore Punch List for the project. One
+#   record per snapshot, date-stamped. The CSV export is the canonical source
+#   (structured-canonical: existence-checked only; the body cites it by
+#   row/section, never by line number).
+#
+#   Forensic value: the punch log is the longest-running QC tracking artifact
+#   on the project. Procore uses the same module to track Site Observation
+#   Reports (SOR), Non-Conformance Reports (NCR), and Pre-Punch items, so the
+#   log embeds NCRs and SOR-typed items going back to scope start. Snapshot-
+#   over-time enables aging analysis and ball-in-court accountability.
+#
+#   PunchList is a SNAPSHOT type, parallel to Budget: each record is its own
+#   point-in-time capture. There is no events[] timeline; item-level lifecycle
+#   lives inside the CSV, and cross-snapshot lifecycle is encoded by the
+#   supersedes-snapshot reference chain. When a newer snapshot supersedes this
+#   one: set this record's status to `superseded`, and the new record carries a
+#   `supersedes-snapshot` reference back to it.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a PunchList record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema PunchList vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every PunchList record must carry all 10 of these ---
+required:
+  type: enum [PunchList]
+  id: string                          # PunchList-Snapshot-YYYY-MM-DD
+  title: string                       # e.g. "Procore Punch List Snapshot, 2025-05-13"
+  status: enum [current, superseded, snapshot]
+  date: date                          # snapshot date (ISO YYYY-MM-DD)
+  source_files: list                  # at minimum the CSV export, see source_files_item
+  references: list                    # cross-refs to embedded NCRs, related Inspections, see references_item
+  referenced_by: list                 # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: the snapshot's extracted aggregates; present when the CSV supports them ---
+optional:
+  total_items: integer                # total data-row count in the snapshot
+  open_items: integer                 # items not in 'Closed' status at snapshot date
+  oldest_open_date: date              # earliest Date Created among still-open items
+  status_breakdown: list              # list of {status, count}
+  type_breakdown: list                # list of {type, count}: Punch / SOR / NCR / Pre-Punch / (blank)
+  top_companies_in_court: list         # list of {company, open_count}
+  notes: string
+
+# Naming convention: PunchList-Snapshot-YYYY-MM-DD.md
+# Originals subfolder: Originals/punch-lists/  (one CSV per snapshot date)
+
+# There is no events[]; PunchList is a snapshot type (see header). events is
+# declared by neither required nor optional and must not appear on a record.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [structured-canonical, prose-snapshot]   # CSV (canonical) or PDF (snapshot)
+  optional:
+    sidecar: string                  # required for a prose-snapshot PDF; a
+                                      #   structured-canonical CSV is already text and has no sidecar
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [embeds-ncr, related-inspection, supersedes-snapshot, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. Drift found and fixed in the migration:
+#         - three enrichment-pass artifacts (extraction quality plus the
+#           enrichment bookkeeping fields), undeclared keys, stripped (the
+#           same artifacts other type reconciliations removed);
+#         - the source_files entry's `sidecar` pointed at the CSV itself, a
+#           hack to satisfy a schema that wrongly required `sidecar` on a
+#           structured-canonical source. `sidecar` is now optional (required
+#           only for a prose-snapshot PDF) and the bogus line was removed.
+#       Verification re-checked every extracted aggregate against the
+#       immutable CSV (total_items 250, open_items 40, the status / type /
+#       company breakdowns, the oldest open date): all correct.
+#       Added: schema_version; the governance header; this changelog. No
+#       required/optional field changed; the v1 seed field set (10 required,
+#       7 optional, no events[]) was sound.
+#   v1  Original seed schema, added with the first PunchList record. No
+#       schema_version; the closed-world check was off, so the enrichment
+#       artifacts went unflagged. source_files_item required `sidecar` on
+#       every entry, including structured-canonical CSVs.
+# ============================================================================

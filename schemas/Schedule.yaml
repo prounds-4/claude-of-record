@@ -1,0 +1,124 @@
+# ============================================================================
+# Schema: Schedule record frontmatter
+# ============================================================================
+#
+# WHAT A Schedule IS
+#   One project-schedule snapshot, a Primavera P6 schedule or 4-week
+#   look-ahead issued during the job. Each record is one dated snapshot;
+#   the snapshots form a chain via `replaces` / `replaced-by` edges.
+#   Forensic priority HIGH: schedule slip is a primary dispute lever, and
+#   the milestone float figures are the quantitative spine of that analysis.
+#
+# WHAT A Schedule's references[] ARE
+#   references[] is the snapshot-lineage graph: `replaces` to the prior
+#   snapshot, `replaced-by` to the next. The inbound side (referenced_by) is
+#   auto-maintained and also carries `mentions` from records that cite a
+#   schedule.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Schedule record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Schedule vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Schedule record must carry all 10 of these ---
+required:
+  type: enum [Schedule]
+  id: string                        # Schedule-YYYY-MM-DD[-version]
+  title: string                     # e.g. "Project Schedule, 2025-04-13"
+  status: enum [snapshot, current, superseded, draft]
+  date: date                        # schedule issuance date
+  source_files: list                # see source_files_item
+  references: list                  # snapshot-lineage edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  scope: enum [4-week, 6-week, full-project, milestone]
+  issuer: enum [GC, Architect, AOR]  # role-generic substitution for the project's real firm names
+  version: string                   # if multiple iterations same date
+  months_visible: integer           # how many months the schedule horizon spans
+  aor_job_no: string                # architect-of-record job number, when printed on the schedule.
+                                    # (Field renamed from the real firm's initials for publication.)
+  # --- headline completion forecast (from the P6 extraction) ---
+  substantial_completion_target: string   # P6 date token, e.g. "15-Jan-27"
+  substantial_completion_float: integer   # float days against that milestone (negative = behind)
+  final_completion_target: string
+  final_completion_float: integer
+  min_float_days: integer
+  max_float_days: integer
+  milestones: list                  # the extracted P6 milestone rows, see milestones_item
+  notes: string
+
+# Naming convention: Schedule-YYYY-MM-DD[-version].md
+# Originals subfolder: Originals/schedules/{year}/ or _import/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, structured-canonical, image-drawing]
+    # tabular schedule = prose-primary; xlsx = structured-canonical; Gantt PDF = image-drawing
+  optional:
+    sidecar: string                 # most schedule PDFs carry no .txt sidecar
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [replaces, replaced-by]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# --- nested: each entry in milestones[] (one P6 milestone row) ---
+milestones_item:
+  required:
+    activity_id: string              # the P6 activity ID, e.g. "MS1000"
+    name: string
+    target_date: string              # P6 date token, e.g. "15-Jan-27"
+    float_days: integer
+  optional:
+    on_critical_path: boolean        # present (true) only on critical-path milestones
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. v1 was a never-updated "future entity type, pre-wire only" stub
+#       schema; the type went active (ingested via a batch schedule handler)
+#       and the schema was never reconciled to that reality. This v2 does it.
+#       The migration stripped from the records: the enrichment / extraction
+#       bookkeeping fields; a duplicate of `date`; derivable probe counts
+#       (milestone counts, keyword counts); the source-scan probe family
+#       (scraped ASI/RFI refs, document kind, text chars, page counts, date
+#       counts); and an eleven-field `extracted_*` family that was an exact
+#       probe twin of the real non-prefixed fields. The real schedule data was
+#       KEPT and newly declared: `milestones` (the P6 milestone rows, with a
+#       formalized milestones_item schema), the headline completion forecast
+#       (substantial_completion_target/float, final_completion_target/float),
+#       min/max_float_days, months_visible, and the AOR job number.
+#       references[]: the v1 relationship enum matched nothing in the records;
+#       it was reconciled to the snapshot-lineage values actually used
+#       (`replaces`, `replaced-by`); a large set of probe edges (graph twins
+#       of the stripped scraped-ref fields, undeclared relationships) was
+#       dropped from references[]. source_files type enum gained
+#       `structured-canonical` (used by a handful of records); `sidecar`
+#       moved to optional (only a small minority of records have one).
+#       Bodies: removed the probe-echo and hand-rendered reference sections;
+#       all malformed stub Summaries were regenerated. Added schema_version,
+#       the governance header, this changelog. Required (10) field set
+#       unchanged.
+#   v1  Original pre-wire stub schema. No schema_version; the closed-world
+#       check was off. Declared the type as future with no corpus yet; the
+#       references enum and the source-type enum both described an imagined
+#       type, not the records the batch handler actually created.
+# ============================================================================

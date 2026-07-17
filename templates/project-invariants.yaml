@@ -1,0 +1,217 @@
+# ============================================================================
+# project-invariants.yaml - project-specific facts for the semantic audit
+# ============================================================================
+#
+# WHAT THIS FILE IS
+#   scripts/audit_semantic.py checks that extracted record values match their
+#   cited sources and satisfy the project's known fixed facts. Everything the
+#   audit knows about YOUR project lives here, never in the script. Copy this
+#   template to <wiki-root>/.claude/project-invariants.yaml and replace every
+#   example value. Delete any section you do not need; the audit skips missing
+#   sections and says so in its coverage statement.
+#
+#   All example values below are fictional: Owner "Ridgeline Ventures LLC",
+#   GC "Thornmere Builders", architect "Atelier North", round-number sums.
+#
+# WHY IT EXISTS
+#   Class invariants are the cheapest semantic tripwire a record wiki has. If
+#   the base contract sum is a fixed fact, every record that carries it wrong
+#   was extracted wrong, and a one-line rule here catches it forever.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# project: identity and global bounds
+# ----------------------------------------------------------------------------
+# name / currency are informational. date_min / date_max define the plausible
+# project window: any record whose `date` falls outside it is flagged. Without
+# them, only future-dated records are flagged.
+project:
+  name: "Ridgeline Ventures LLC - Fennmore Commerce Center"
+  currency: USD
+  date_min: 2019-01-01
+  date_max: 2032-12-31
+
+# ----------------------------------------------------------------------------
+# class_constants: fixed facts that must read the same everywhere
+# ----------------------------------------------------------------------------
+# Each entry asserts: for every record of `record_type` (optionally filtered
+# by `when`, a map of frontmatter field -> required value), if `field` is
+# present it must equal `expected_value` (numeric tolerance one cent, strings
+# compared exactly after trimming). `note` is echoed in the violation message.
+#
+# The canonical use: a prime-contract original sum that appears on every pay
+# application. One typo'd extraction and the forensic math downstream is wrong.
+class_constants:
+  - record_type: PayApp
+    field: original_contract_sum
+    expected_value: 250000000.00
+    when:
+      party: GC
+      stream: Main
+    note: "Thornmere Builders prime contract original sum is a fixed fact"
+  - record_type: BaseContract
+    field: party
+    expected_value: GC
+    when:
+      id: BaseContract-GC-2020
+    note: "the GC base contract record always carries party GC"
+
+# ----------------------------------------------------------------------------
+# source_presence: tuning for the core value-in-sidecar check
+# ----------------------------------------------------------------------------
+# The audit auto-detects money fields by name (amount, total, sum, balance,
+# payment, due, price, cost, fee, retainage, certif...) and checks each value
+# against the record's cited sidecar text, tolerating OCR renderings. This
+# section tunes that check; every key is optional.
+#
+#   min_value       - frontmatter values below this are ignored (default 100)
+#   body_min_value  - body dollar figures below this are ignored (default 1000)
+#   check_body      - also scan record body prose for $ figures (default true)
+#   fields          - extra frontmatter fields to treat as money, per record
+#                     type, when the name heuristic would miss them
+#   exclude_fields  - field names to never treat as money
+source_presence:
+  min_value: 100
+  body_min_value: 1000
+  check_body: true
+  fields:
+    PayApp:
+      - current_retention_held
+  exclude_fields:
+    - line_item_counts
+
+# ----------------------------------------------------------------------------
+# outlier_bounds: sane min/max per record type and field
+# ----------------------------------------------------------------------------
+# Flags any numeric field outside the configured range. Use this for scale
+# tripwires: a $7,503 "original contract sum" on a nine-figure project is a
+# regex truncation, not a fact. Either bound may be omitted.
+outlier_bounds:
+  PayApp:
+    original_contract_sum:
+      min: 100000        # anything smaller is almost certainly a truncated extraction
+  BidPackage:
+    awarded_amount:
+      min: 1000
+      max: 100000000     # no single trade package plausibly exceeds this
+  Invoice:
+    total_amount:
+      min: 1
+      max: 50000000
+
+# ----------------------------------------------------------------------------
+# reference_ranges: which numbered entities actually exist
+# ----------------------------------------------------------------------------
+# Each entry gives a regex (with ONE capture group over the numeric id)
+# matched against every references[] target, plus the inclusive id range that
+# exists in the corpus. A citation of Amendment-GC-19 when only 01..12 were
+# ever executed is an extraction error, not a forward reference.
+# Update the ranges as new entities are ingested.
+reference_ranges:
+  - pattern: 'records/contracts/Amendment-GC-(\d+)\.md'
+    min: 1
+    max: 12
+    note: "GC amendments 01 through 12 exist as of the last corpus update"
+  - pattern: 'records/pccos/PCCO-(\d+)\.md'
+    min: 1
+    max: 20
+    note: "PCCO-001 through PCCO-020 ratified to date"
+
+# ----------------------------------------------------------------------------
+# cross_record: declarative consistency rules
+# ----------------------------------------------------------------------------
+# Four rule types are supported; anything else is flagged as a config error.
+#
+# sum_matches      (within one record)
+#   sum of `addends` must equal `equals`, within `tolerance` (default 0.50).
+#   Fields listed in `optional_addends` count as zero when absent; a missing
+#   required addend skips the record. Note: SubcontractCO/PrimeCO records with
+#   the canonical field names below are already covered by a built-in check;
+#   the example is here to show the shape for records with other field names.
+#
+# fields_equal     (within one record)
+#   `field_a` must equal `field_b` within `tolerance` (default 0.01), for
+#   records matching the optional `when` filter. Use for a ledger rollup that
+#   must reconcile to the executed amount it claims to cover.
+#
+# field_gte        (within one record)
+#   `field` must be >= `floor_field` minus `tolerance`. Use for monotonic
+#   facts: contract sum to date never drops below the original sum.
+#
+# field_agreement  (across records)
+#   For every record of `record_type`, walk the list-of-mappings field
+#   `list_field`; group rows by `key`; all rows sharing a key must agree on
+#   `field`. Use for facts many records each re-assert about the same entity,
+#   like an amendment execution date cited on every pay application.
+cross_record:
+  - type: sum_matches
+    record_type: SubcontractCO
+    addends: [original_contract_sum, previous_co_total, this_change_amount]
+    optional_addends: [previous_co_total]
+    equals: new_contract_sum
+    tolerance: 0.50
+  - type: fields_equal
+    record_type: PCCO
+    field_a: ledger_total
+    field_b: executed_amount
+    tolerance: 1.00
+    when:
+      ledger_coverage: covered
+  - type: field_gte
+    record_type: PayApp
+    field: contract_sum_to_date
+    floor_field: original_contract_sum
+    tolerance: 100
+  - type: field_agreement
+    record_type: PayApp
+    list_field: per_amendment_billing
+    key: amendment_id
+    field: date_executed
+
+# ----------------------------------------------------------------------------
+# vendor_names: known-good vendor allowlist (optional)
+# ----------------------------------------------------------------------------
+# When non-empty, every record's `vendor` field must match one of these names
+# (case-insensitive; substring in either direction). Leave empty or delete to
+# skip the allowlist; the built-in noise heuristics (month names, bare
+# numbers, captured document headers) run regardless.
+vendor_names:
+  - Thornmere Builders
+  - Atelier North
+  - Cascade Steel Erectors
+  - Lakeshore Mechanical
+  - Pinnacle Glazing
+
+# ----------------------------------------------------------------------------
+# lab_anchors: alternate text anchors for inspection labs (optional)
+# ----------------------------------------------------------------------------
+# Inspection records must show their `lab` name somewhere in the cited
+# sidecar. When a lab's reports identify themselves by a report-number prefix
+# or an affiliate name instead of the lab name, list those strings here
+# (matched case-insensitively). The lab name itself is always an anchor.
+lab_anchors:
+  Northgate Testing:
+    - "NT-2"          # report number prefix used on their letterhead
+  Summit NDE:
+    - "summit nondestructive"
+
+# ----------------------------------------------------------------------------
+# formats: overrides for built-in format checks (optional)
+# ----------------------------------------------------------------------------
+# Regexes for small format checks. Defaults shown; override only if your
+# project's conventions differ.
+formats:
+  amendment_label: '^\d{1,3}(?:\s*R\d+)?$'
+  cost_code: '^\d{4,6}$'
+
+# ----------------------------------------------------------------------------
+# suppressions: accepted findings (optional)
+# ----------------------------------------------------------------------------
+# Map of violation category -> list of substrings. A finding whose message
+# contains one of the substrings is moved to the report's suppressed section
+# instead of failing the run. Use sparingly, and only for findings a human has
+# investigated and explained; each suppression should be traceable to a log
+# entry saying why it is accepted.
+suppressions:
+  dollar_not_in_source:
+    - "PayApp-GC-Main-03"   # example: figure lives on an image-only page; verified by eye

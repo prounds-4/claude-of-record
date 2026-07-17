@@ -1,0 +1,140 @@
+# ============================================================================
+# Schema: Change (CE / PCO change-event) record frontmatter
+# ============================================================================
+#
+# WHAT A Change IS
+#   One change event on the project, keyed by CE number. CE and PCO are
+#   lifecycle stages of a single change; a Change record tracks it from
+#   CE-created through pricing and bundling. (PCO is also its own entity
+#   type, records/pcos/, for cost-layer breakouts; PCCO is its own type
+#   because a PCCO bundles multiple CEs/PCOs.)
+#
+# WHAT A Change's references[] ARE
+#   references[] is the outbound graph: `triggered-by-rfi` / `triggered-by-asi`
+#   to the instrument that caused the change, `bundled-into-pcco` to the PCCO
+#   that bundled it, `mentions-ce/pco/pcco` for cross-event mentions. The
+#   inbound side (referenced_by) is auto-maintained and carries `bundles-ce`
+#   (from a PCCO), `prices-ce` (from a PCO), `mentions`, etc.
+#
+# THE `## Position Analysis` BODY SECTION
+#   A curated subset of Change records carry a hand-curated `## Position
+#   Analysis` body section, a deep, source-grounded forensic analysis. It is
+#   real content and is kept untouched by reconciliation. The v1 schema also
+#   carried a `position_analysis` FRONTMATTER block (the structured backing
+#   for that section); per the PCO reconciliation precedent that frontmatter
+#   block was removed (frontmatter is metadata, not a forensic essay). The
+#   body section is the home of the analysis.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Change record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Change vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Change record must carry all 11 of these ---
+required:
+  type: enum [Change]
+  id: string                        # e.g. Change-0455, Change-0301.1
+  title: string                     # may embed cross-refs (e.g. "PCO 217 - CE #455 - RFI #1204")
+  status: enum [open, closed, absorbed-in-gmp, withdrawn, pending-pricing, priced, approved, unknown]
+  date: date                        # CE created date
+  source_files: list                # see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only lifecycle timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  ce_number: integer
+  pco_number: integer
+  pcco_number: integer              # if/when bundled, also referenced in references[]
+  rom_amount: number                # the GC's rough order of magnitude
+  pco_amount: number                # priced PCO amount
+  approved_amount: number           # amount carried on the bundling PCCO / Amendment
+  rfq_count: string                 # RFQs returned / expected, e.g. "11/20"
+  rfq_total: number                 # total dollar value of the returned RFQs
+  change_reason: enum [Design Directive, RFI, Buyout, OAR, VE, Other, Unknown]
+  ce_type: string                   # the GC log's own coding vocabulary, e.g. "Owner Add", "Within GMP", "Excluded"
+  scope_family: enum [paint, door, hardware, tile, signage, lighting, finish-swap, flooring, mep-fixture, landscape, structural, demo, glazing, roofing, waterproofing, ceiling, other]
+                                    # heuristic tag for clustering similar changes
+  notes: string
+
+# Naming convention: Change-NNNN[.N].md  (keyed by CE number)
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-snapshot, structured-canonical]
+  optional:
+    sidecar: string                 # prose-* sources carry .txt sidecars; the change-log xlsx does not
+    snapshot_date: date             # for prose-snapshot / structured-canonical, when the snapshot was issued
+    ocr_pdf: string
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [triggered-by-rfi, triggered-by-asi, bundled-into-pcco, mentions-ce, mentions-pco, mentions-pcco, same-asi-different-part, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# --- nested: each entry in events[] ---
+events_item:
+  required:
+    date: date
+    type: enum [ce-created, observed, observed-snapshot, priced, bundled-into-pcco]
+  optional:
+    note: string
+    detail: string
+    source: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  Several hundred records, the CE change-event
+#       backbone. The migration stripped from the records: deepener artifacts
+#       (timestamps, an extraction-quality tag); the `position_analysis`
+#       frontmatter block, a large nested forensic-analysis structure that
+#       does not belong in frontmatter (the same call the PCO reconciliation
+#       made for the sibling CE/PCO entity type); the `## Position Analysis`
+#       body section it backs was kept untouched. Also stripped: probe
+#       ref-list scalars (ce_refs / pco_refs / pcco_refs); `category` (a
+#       machine heuristic tag on one record; PCO removed `category` for the
+#       same reason); a stray e-signature envelope id on one record
+#       (anomalous on a CE; e-signature provenance belongs on the
+#       Subcontract/SubcontractCO); and the source_* probe family
+#       (text-length, date-count, document-kind, dollar and cross-ref
+#       scrapes). Vocabulary fix: a small batch of records carried `amount`
+#       where the schema and every other record use `rom_amount` (verified:
+#       on one record the `amount` value $1,250,000 matched the body's "GC
+#       ROM $1,250,000"); `amount` was renamed to `rom_amount` in place. Two
+#       real PCO-pricing fields the deepener surfaced were KEPT and newly
+#       declared: `rfq_count` (RFQs returned / expected, e.g. "11/20") and
+#       `rfq_total` (dollar value of returned RFQs). The references
+#       relationship enum was reconciled to the values actually used on the
+#       outbound side (added mentions-ce / mentions-pco / mentions-pcco /
+#       same-asi-different-part; removed unused values; the inbound-only
+#       bundles-ce / prices-ce / triggered-pco belong to the PCCO / PCO
+#       schemas, not here). events_item was formalized (type enum reconciled
+#       to the five values in use; v1's comment listed several never-used
+#       types). The unused `pcco_group` optional was dropped (PCCO now owns
+#       bundling groups). source_files_item `sidecar` moved to optional.
+#       Bodies: removed the probe-echo `## Extracted fields` and the
+#       hand-rendered outbound/inbound reference sections; the `## Summary`,
+#       `## Position Analysis`, and all hand-authored forensic sections were
+#       kept verbatim. Added schema_version, the governance header, this
+#       changelog. Required (11) field set unchanged.
+#   v1  (original seed)  No schema_version; the closed-world check was off.
+#       events_item was comment-only; the `position_analysis` layer was
+#       bolted on without ever being declared.
+# ============================================================================

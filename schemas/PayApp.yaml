@@ -1,0 +1,193 @@
+# ============================================================================
+# Schema: PayApp (Application for Payment) record frontmatter
+# ============================================================================
+#
+# WHAT A PayApp IS
+#   One contractor / architect application for payment. Streams (fictional
+#   slugs substituted for the project's real billing-stream names):
+#     - Main : the GC's primary prime pay apps (AIA G702/G703)
+#     - Site: the GC's secondary site-package pay apps (invoice / payment-
+#              routing-slip format, not a strict G702)
+#     - Arch: design-architect pay apps (bundle-organized: multiple PDFs per
+#              pay app, each tagged with a bundle_role)
+#     - Consultant: owner-direct consultant/vendor pay apps (routing-slip
+#              cover format)
+#
+# WHAT A PayApp's references[] ARE
+#   references[] is the densest cross-ref source in the wiki. Every Amendment
+#   and every PCCO drawn down in the period appears as an edge
+#   (`drawn-down-in` / `billed-against`), 30 or more entries on a typical late
+#   pay app. The Per-Amendment Billing Breakdown (per_amendment_billing[]) is
+#   the forensic spine of the record.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a PayApp record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema PayApp vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 3
+
+# --- REQUIRED: every PayApp record must carry all 14 of these ---
+required:
+  type: enum [PayApp]
+  id: string                        # e.g. PayApp-GC-Main-12, PayApp-GC-Site-07, PayApp-Arch-21, PayApp-Harbor-PM-05
+  title: string
+  status: enum [submitted, certified, paid, disputed, draft]
+  date: date                        # period-ending / invoice date
+  party: enum [GC, Architect, Consultant]  # role-generic substitution for the project's real party names.
+                                    # Consultant = owner-direct consultant/vendor (not a prime-contract party)
+  stream: enum [Main, Site, Arch, Consultant]  # Main = GC primary, Site = GC secondary site package,
+                                    # Arch = design architect, Consultant = owner-direct consultant billing.
+                                    # Fictional slugs substituted for the project's real stream names.
+  application_number: integer
+  source_files: list                # see source_files_item
+  references: list                  # HEAVY: every Amendment + every PCCO drawn down, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # lifecycle timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  variant: string                   # e.g. "Steel-Mod-2" for special pay apps
+  period_start: date
+  period_end: date
+  # --- the G702 / invoice nine-line money summary ---
+  original_contract_sum: number
+  net_change_by_change_orders: number
+  contract_sum_to_date: number
+  total_completed_to_date: number
+  retainage_total: number
+  total_earned_less_retainage: number
+  less_previous_certificates: number
+  current_payment_due: number
+  balance_to_finish: number
+  percent_complete: number
+  amount_certified: number
+  certified_date: date
+  invoice_no: string                # GC remittance / invoice number (Site + late Main-stream pay apps); also the routing-slip Invoice No on Consultant pay apps
+  consultant: string                # Consultant stream only, the owner-direct consultant/vendor name (e.g. "Harbor Advisory LLC", "Lakeside Planning")
+  cost_code: string                 # Consultant stream, the owner GL cost code from the routing slip (e.g. "51000" owner-rep PM)
+  due_date: date                    # Consultant stream, invoice due date from the routing slip
+  per_amendment_billing: list        # the billing breakdown, see per_amendment_billing_item
+  g703_line_count: integer           # number of G703 schedule-of-values lines extracted
+  g703_lines: list                   # the verbatim G703 SOV line items, see g703_lines_item
+  notes: string
+
+# Naming convention: PayApp-{GC-Main|GC-Site|Arch}-NN[-variant].md
+#   Consultant stream: PayApp-{ConsultantSlug}-NN.md (e.g. PayApp-Harbor-PM-05,
+#   PayApp-Lakeside-Planning-12). ConsultantSlug is a stable kebab-ish slug of the remit-to consultant.
+# Originals subfolder: Originals/pay-applications/{year}/ or _import/ or consultants/{ConsultantSlug}/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, image-drawing]
+  optional:
+    sidecar: string                 # prose-* sources carry .txt sidecars; some .docx do not
+    bundle_role: enum [G702, G703, supporting]
+    # Architect pay apps are bundles; each PDF in the bundle gets a bundle_role tag
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string                  # path to records/contracts/Amendment-*.md or records/pccos/PCCO-*.md
+    relationship: enum [drawn-down-in, billed-against, supersedes-payapp]
+  optional:
+    status: enum [pending-target]
+    billing_number: integer          # which Billing # this draw-down first appeared in
+
+# --- nested: each entry in events[] ---
+events_item:
+  required:
+    date: date
+    type: enum [submitted, certified, paid, corrected]
+    detail: string
+  optional:
+    source: string                   # provenance note for the event
+
+# --- nested: each entry in per_amendment_billing[] ---
+per_amendment_billing_item:
+  required:
+    amendment_id: string              # path to records/contracts/Amendment-*.md, OR null when pcco_id is set
+    date_executed: date
+    total: number
+  optional:
+    pcco_id: string                   # path to records/pccos/PCCO-NNN.md (when the row is a PCCO)
+    billing_number: integer           # the cumulative Billing # this row first appeared in
+    billing_change_total: number      # the change-total for the row's billing period
+    note: string                      # analyst commentary on the row
+
+# --- nested: each entry in g703_lines[] (one G703 schedule-of-values line) ---
+g703_lines_item:
+  required:
+    code: string                      # the SOV cost code (may carry leading zeros)
+    description: string
+    orig_budget: number
+    transfers: number
+    pcco_adds: number
+    current_budget: number
+    prev_drawn: number
+    this_period: number
+    total_drawn: number
+    pct_drawn: number
+    remaining: number
+
+# ============================================================================
+# CHANGELOG
+#   v3  Added the Consultant stream: owner-direct consultant/vendor pay apps
+#       (uniform "Payment Routing Slip" cover format, structurally like the
+#       Site stream). party enum +Consultant; stream enum +Consultant;
+#       optional fields +consultant (remit-to vendor), +cost_code (owner GL
+#       code from the slip), +due_date. id/naming +PayApp-{ConsultantSlug}-NN.
+#       Money fields (current_payment_due etc.) stay optional and are
+#       gap-flagged on ingest: the routing slip carries metadata
+#       (consultant/app#/invoice#/dates/cost code), the dollar sits on
+#       attached invoice pages and is enriched separately. Ingested via
+#       .claude/scripts/ingest_consultant_payapps.py. Required (14) field set
+#       unchanged. Reason: a batch of consultant pay apps arrived in an
+#       upstream document pull with no home (PayApp was GC/Architect-only);
+#       owner-rep billing and total-project-budget work needs per-consultant
+#       billing trails.
+#   v2  Reconciled to the actual record corpus (all streams) in a full-type
+#       reconciliation pass. A migration script stripped from the records:
+#       enrichment-pass bookkeeping fields; extraction-batch provenance
+#       artifacts; an eleven-field probe family of source-scan counters; a
+#       duplicate of original_contract_sum; and a text echo of `date`.
+#       Two extraction-batch fields were KEPT and newly declared:
+#       `g703_line_count` and `g703_lines` (the verbatim G703
+#       schedule-of-values line items, each carrying code / description /
+#       budget / transfers / draws / pct, real forensic SOV detail, not
+#       garbage); the `g703_lines_item` nested schema was formalized.
+#       Vocabulary reconciliation: the invoice-format Site-stream pay apps had
+#       been extracted under the source document's own labels
+#       (current_invoice_amount / change_orders_total / new_contract_sum /
+#       contract_balance) instead of the schema's canonical G702 field names.
+#       Those four were renamed in place to current_payment_due /
+#       net_change_by_change_orders / contract_sum_to_date / balance_to_finish;
+#       the mapping was verified against a routing-slip source and the
+#       arithmetic chains. On one Main-stream record a lone truncated mis-parse
+#       contradicted the record's own canonical net_change_by_change_orders
+#       and was dropped as garbage. Added the optional `invoice_no` field
+#       (the GC remittance/invoice number). Nested schemas formalized:
+#       `events_item` (date / type / detail, optional source);
+#       `per_amendment_billing_item` promoted from a comment to a real block,
+#       dropping two never-populated job-allocation fields and adding
+#       `billing_change_total` (present on a minority of rows). Bodies:
+#       removed the probe-echo and hand-rendered reference sections; the
+#       hand-built records kept their bodies verbatim; stub Summaries were
+#       regenerated. Added schema_version, the governance header, this
+#       changelog. Required (14) field set unchanged.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off. events / per_amendment_billing item shapes were comment-only;
+#       the per_amendment_billing comment declared two allocation fields no
+#       record ever carried.
+# ============================================================================

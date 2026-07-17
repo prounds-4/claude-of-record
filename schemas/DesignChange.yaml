@@ -1,0 +1,99 @@
+# ============================================================================
+# Schema: DesignChange record frontmatter
+# ============================================================================
+#
+# WHAT A DesignChange IS
+#   Design-side documentation of a change in design intent: a drawing
+#   revision, a landscape-architect change log, a redesigned detail. It is
+#   NOT a contract instrument: the resulting cost/time impact lives in a PCO,
+#   PCCO, or Change Order. A DesignChange captures only the design shift.
+#
+# WHAT A DesignChange'S references[] ARE
+#   references[] is the single home of the graph. The ASI that formalized the
+#   change, the RFI that triggered it, the PCCO that captured its cost, all
+#   are references[] edges (issued-as-asi / triggered-by-rfi / captured-in-pcco).
+#   There are no parallel related_asis / related_rfis / related_pccos scalar
+#   fields; the v1 schema declared them and v2 removed them as graph duplication.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a DesignChange record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema DesignChange vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every DesignChange record must carry all 10 of these ---
+required:
+  type: enum [DesignChange]
+  id: string                        # DesignChange-YYYY-MM-DD-NN
+  title: string
+  status: enum [proposed, issued-as-asi, withdrawn, superseded, unknown]
+  date: date                        # design change date
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source document supports them ---
+optional:
+  design_change_number: string      # the project's own design-change identifier, when one exists
+  originator: string                # who issued the change: the design architect / the architect of record / a named consultant / the owner
+  scope_area: string                # the building / package area affected
+  reason: string                    # why the design changed (RFI response, owner directive, code, etc.)
+  notes: string
+
+# Naming convention: DesignChange-YYYY-MM-DD-NN.md
+# Originals subfolder: Originals/design-changes/
+# DesignChange is not an events-bearing type; there is no events[] field.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, image-drawing]
+  optional:
+    sidecar: string                 # required for prose-primary; for image-drawing the
+                                      #   sidecar (if present) is OCR geometry tokens, not prose
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [issued-as-asi, triggered-by-rfi, captured-in-pcco, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  A small record set. Drift found and fixed in
+#       the migration:
+#         - deepener-pass artifacts (timestamps and a narrative_short field),
+#           all undeclared keys. narrative_short held unsalvageable extraction
+#           garbage (geometry-token strings grabbed off the sidecar's first
+#           line). All stripped.
+#         - two records were typed source_files prose-primary but their
+#           sidecars are pure OCR geometry tokens (the source PDFs are layout
+#           drawings). Retyped to image-drawing.
+#       Schema changes:
+#         - removed the optional related_asis / related_rfis / related_pccos
+#           lists; they duplicated the references[] graph (the issued-as-asi /
+#           triggered-by-rfi / captured-in-pcco relationships are the single
+#           home). No record used them.
+#         - source_files_item `sidecar` made optional (required for
+#           prose-primary; an image-drawing sidecar is geometry tokens),
+#           consistent with the other reconciled schemas.
+#       Added: schema_version; the governance header; this changelog.
+#       Required field set (10) unchanged.
+#   v1  (original seed)  No schema_version; the closed-world check was off, so
+#       the deepener artifacts went unflagged. Declared related_asis /
+#       related_rfis / related_pccos alongside the equivalent references[]
+#       relationships.
+# ============================================================================

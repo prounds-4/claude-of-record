@@ -1,0 +1,49 @@
+# Schema: Deliverable artifact frontmatter
+# Used by /lint-wiki rule 1 (frontmatter completeness), rule 5 (naming), and
+# rule 9 (immutability).
+
+required:
+  type: enum [deliverable]
+  title: string
+  shipped_date: date                    # ISO YYYY-MM-DD; the immutability anchor
+  status: enum [draft, shipped-frozen, superseded]
+  stream: string                        # stream-slug; matches parent folder name (kebab-case)
+  generated_from: string                # path to source topic, skill, or list
+  corpus_state: object                  # see corpus_state schema below
+
+optional:
+  iteration: string                     # e.g. "v5", "r1"; omit for single-iteration streams
+  supersedes: string                    # path to the iteration this one replaces
+  superseded_by: string                 # path to a later deliverable that supersedes this one
+  shipped_to: string                    # who received it (the owner's board, opposing counsel, etc.)
+  generated_from_synthesized_at: date   # when the source topic was last synthesized
+  notes: string
+
+corpus_state:
+  required:
+    most_recent_oac_ingested: string    # e.g. OAC-042 (or null if no OACs ingested at the time)
+    pcco_log_snapshot: string           # filename of the xlsx/PDF snapshot in use
+  optional:
+    rfi_count_at_time: integer
+    rfi_count_known_complete: boolean
+    asi_count_at_time: integer
+    submittal_count_at_time: integer
+    most_recent_amendment: string       # e.g. Amendment-GC-07
+    other_caveats: string               # free-text note about what was incomplete
+
+# Naming pattern (lint rule 5):
+#   Stream folder:        outputs/<stream-slug>/
+#   Single-file iteration: outputs/<stream-slug>/<iteration>.<ext>
+#   Bundle iteration:      outputs/<stream-slug>/<iteration>/ (containing README.md + assets)
+#
+#   Iteration token:       [v|r]N-YYYY-MM-DD[-note]   OR   YYYY-MM-DD[-note]
+#     - vN / rN prefix when the stream iterates (versions / revisions)
+#     - bare date when the stream has only one shipping per day with no version semantics
+#
+# Lint rule 9 (deliverable immutability):
+#  - Every file in a stream folder belonging to an iteration with
+#    status: shipped-frozen must not be modified after shipped_date (+1 day grace
+#    for filesystem clock skew and file-sync delay).
+#  - Bundles are append-only: new files may be added to an open bundle, but
+#    existing files cannot be modified after their iteration shipped.
+#  - Corrections ship as a new iteration; the original is left untouched.

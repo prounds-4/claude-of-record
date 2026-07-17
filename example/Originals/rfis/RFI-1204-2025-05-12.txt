@@ -1,0 +1,32 @@
+THORNMERE BUILDERS
+REQUEST FOR INFORMATION
+
+Project: Fennmore Commerce Center
+Owner: Ridgeline Ventures LLC
+RFI No.: 1204
+Date Submitted: 2025-05-12
+Submitted By: J. Ortiz, Thornmere Builders
+To: Crestview Architects (Architect of Record)
+Subject: Canopy edge beam conflict with roof drain leader at Grid C-7
+
+QUESTION
+
+Drawing A-501 (canopy edge detail) shows the W12x26 edge beam continuous
+through Grid C-7. Plumbing drawing P-210 routes the 4 inch roof drain
+leader through the same web location. The two cannot both be built as
+drawn. Please advise: reroute the leader, or modify the beam?
+
+Fabrication of the canopy steel package is scheduled to begin 2025-06-16.
+A response by 2025-06-02 is requested to hold that date.
+
+RESPONSE (Crestview Architects, 2025-06-02)
+
+Reroute the drain leader east of Grid C-7 per attached sketch SK-A-044.
+Provide a field-welded L4x4 reinforcing angle at the revised penetration.
+Structural (Baseline Structural) concurs. This change is anticipated to
+have cost impact; contractor to price under a change event.
+
+STATUS
+
+Closed 2025-06-05. Cost impact: Yes. Change Event CE 455 opened by
+Thornmere Builders to track pricing.

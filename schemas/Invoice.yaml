@@ -1,0 +1,117 @@
+# ============================================================================
+# Schema: Invoice record frontmatter
+# ============================================================================
+#
+# WHAT AN Invoice IS
+#   A subcontractor / vendor invoice, distinct from PayApp (which is the
+#   GC-aggregated, owner-facing application for payment). An Invoice
+#   typically sits upstream of a PayApp line item.
+#   Source: Originals/invoices/{year}/.
+#
+# WHAT AN Invoice's references[] ARE
+#   references[] is pre-wired for the payment-linkage graph (`paid-via-payapp`
+#   to the PayApp under which payment was made, `paid-via-check-request` for a
+#   direct pay, `supersedes` for a re-issued invoice). As of the v2
+#   reconciliation no Invoice record carries an outbound edge yet; the graph
+#   is forward-looking.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an Invoice record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Invoice vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Invoice record must carry all 9 of these ---
+required:
+  type: enum [Invoice]
+  id: string                        # Invoice-{vendor-slug}-{invoice-number}-YYYY-MM
+  title: string
+  status: enum [received, paid, disputed, void, unknown]
+  date: date                        # invoice date
+  source_files: list                # see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  vendor: string                    # vendor / subcontractor name (e.g. Summit Steel)
+  invoice_number: string            # vendor-assigned invoice number
+  total_amount: number              # the invoice total
+  original_contract_amount: number  # contract context printed on the invoice / routing slip
+  reimbursement: number             # reimbursable-cost amount
+  has_reimbursables: boolean         # the invoice carries reimbursable line items
+  total_hours: number               # total hours billed (T&M invoices)
+  cost_code: string                 # the cost code the invoice is booked to
+  project_no: string                # the vendor's project number
+  routing_slip_no: string           # the GC payment-routing-slip number
+  payment_terms: string             # e.g. "Net 15", "Net 30"
+  services: string                  # description of services / work billed
+  period_start_text: string         # billing-period start, as printed
+  period_end_text: string           # billing-period end, as printed
+  period_covered: string            # billing period as a single string, e.g. "March 2025"
+  scope: string                     # what work / equipment / services
+  paid_via_payapp: string           # path to the PayApp Record under which payment was made
+  paid_via_check_request: string    # path to a CheckRequest reference if direct-paid
+  notes: string
+
+# Naming convention: Invoice-{vendor-slug}-{invoice-number}-YYYY-MM.md
+# Originals subfolder: Originals/invoices/{year}/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, structured-canonical]
+  optional:
+    sidecar: string                 # prose-* sources carry .txt sidecars; some do not
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [paid-via-payapp, paid-via-check-request, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  A couple hundred subcontractor / vendor
+#       invoice records. The migration stripped from the records: the
+#       deepener / extraction artifacts (timestamps and an
+#       invoice-extraction stamp); `largest_dollar_value` (the "largest
+#       dollar in the text" probe, the same garbage-prone field stripped from
+#       Subcontract); an invoice-date text probe, demonstrably garbage (on
+#       one record it held a truncated mid-word string; the required `date`
+#       field already holds the invoice date); an `invoice_date` field (a
+#       redundant duplicate of `date`, one record); `amount` (a redundant
+#       duplicate of `total_amount`; the one record carrying it also carried
+#       total_amount with the identical value); and a minority parallel
+#       payment-terms vocabulary (`payment_terms`, the dominant field by far,
+#       was kept). Eleven real invoice fields the deepener had surfaced were
+#       KEPT and newly declared: total_amount, original_contract_amount,
+#       reimbursement, has_reimbursables, total_hours, cost_code, project_no,
+#       routing_slip_no, payment_terms, services, period_start_text,
+#       period_end_text. The v1 schema's `amount` and `invoice_date` optional
+#       fields were removed (replaced by total_amount / subsumed by date).
+#       source_files_item `sidecar` moved to optional (one record has a
+#       source with no sidecar).
+#       Bodies: removed the probe-echo `## Extracted fields` section; the
+#       malformed stub Summaries were regenerated across the type. Added
+#       schema_version, the governance header, this changelog. Required (9)
+#       field set unchanged. Note: nearly every record carries
+#       `status: unknown`, a bulk-ingest gap registered in the
+#       known-bad-records register for an Invoice-status buildout pass.
+#   v1  (original seed)  No schema_version; the closed-world check was off.
+#       Declared `amount` (the deepener used `total_amount`) and
+#       `invoice_date` (a duplicate of `date`).
+# ============================================================================

@@ -1,0 +1,31 @@
+# Semantic-audit invariants for the example corpus (Fennmore Commerce Center).
+# See templates/project-invariants.yaml for full documentation of every key.
+
+project:
+  name: "Ridgeline Ventures LLC - Fennmore Commerce Center"
+  currency: USD
+  date_min: 2024-01-01
+  date_max: 2027-12-31
+
+outlier_bounds:
+  PCO:
+    priced_amount:
+      min: 100
+      max: 10000000
+  Amendment:
+    amendment_amount:
+      min: 1000
+      max: 50000000
+
+reference_ranges:
+  - pattern: 'records/contracts/Amendment-GC-(\d+)\.md'
+    min: 1
+    max: 2
+    note: "GC amendments 01 and 02 exist in the example corpus"
+  - pattern: 'records/pcos/PCO-(\d+)\.md'
+    min: 1
+    max: 250
+    note: "PCO numbering runs to the low 200s in the example"
+
+vendor_names:
+  - Summit Steel

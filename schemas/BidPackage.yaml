@@ -1,0 +1,108 @@
+# ============================================================================
+# Schema: BidPackage record frontmatter
+# ============================================================================
+#
+# WHAT A BidPackage IS
+#   A trade buyout record: what scope was put out for bid, who bid, who was
+#   awarded, and for how much. Sourced from the GC's bid tabs and bid
+#   comparison sheets. Forensic value is MEDIUM. A BidPackage surfaces
+#   "scoped vs built" discrepancies and buyout savings/overruns.
+#
+# WHAT A BidPackage'S references[] ARE
+#   references[] is the single home of the graph: the Subcontract the scope
+#   was `awarded-to`, the PCCO that `captured` the buyout, `supersedes` for a
+#   rebid. (Amendments that fund a bid package point AT it; those inbound
+#   edges live in referenced_by[], maintained by /resolve-refs.)
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a BidPackage record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema BidPackage vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every BidPackage record must carry all 11 of these ---
+required:
+  type: enum [BidPackage]
+  id: string                        # BidPackage-NN-{scope-slug} or BidPackage-NN
+  title: string
+  status: enum [out-for-bid, bids-received, awarded, rebid-required, withdrawn, unknown]
+  date: date                        # bid package / bid-tab date, see the v2 changelog caveat
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list                # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # bid lifecycle, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  bc_number: string                 # the project's own bid-package number (e.g. "1", "2.5a", "18.1")
+  scope: string                     # short scope description
+  trade: string                     # CSI division or trade name
+  bid_due_date: date_or_null
+  awarded_to: string                # subcontractor name (e.g. Summit Steel)
+  awarded_amount: number_or_null
+  awarded_date: date_or_null
+  awarded_via_pcco: string          # PCCO that captured the buyout, if any
+  bidders: list                     # bidders who responded
+  notes: string
+
+# Naming convention: BidPackage-NN-{scope-slug}.md  (NN is the bid-package number)
+# Originals subfolder: Originals/bid-packages/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, structured-canonical, image-drawing]
+  optional:
+    sidecar: string                 # required for every prose-* type
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [awarded-to-subcontract, captured-in-pcco, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# --- nested: each entry in events[] (bid lifecycle) ---
+events_item:
+  required:
+    date: date
+    type: enum [issued-for-bid, bids-received, awarded, rebid]
+    note: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  A small set of thin bulk-ingested buyout
+#       stubs. Field-name reconciliation: v1 declared `bid_package_number`;
+#       every record used `bc_number` (the project's own bid-package prefix,
+#       per the record titles). The schema was renamed to the records' name.
+#       The migration stripped deepener probe fields (top-dollar counts,
+#       no-bid counts, the source_* probe family, deepener timestamps). The
+#       probe family was unsalvageable (the document-kind probe tagged bid
+#       packages as change orders). Bodies: removed the probe-echo "Extracted
+#       fields" and hand-rendered inbound-reference sections; stub summaries
+#       rewritten.
+#       Added: schema_version; the governance header; the events_item shape
+#       (v1 listed event types in a trailing comment only); this changelog.
+#       KNOWN-BAD (registered in the known-bad-records register): the records
+#       are thin. `status` is `unknown`, and `scope` / `trade` / `awarded_to`
+#       / `awarded_amount` / `bidders` are unpopulated. The verification pass
+#       found `date` unreliable: most records carry the ingest date, not the
+#       bid-package date (the source bid tabs are earlier documents). Setting
+#       real dates and populating the buyout fields requires a proper
+#       BidPackage ingestion pass, out of scope for this schema
+#       reconciliation; flagged for that pass.
+#   v1  (original seed)  No schema_version; the closed-world check was off, so
+#       the probe family went unflagged.
+# ============================================================================

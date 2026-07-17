@@ -1,0 +1,4 @@
+example/.claude/health/
+__pycache__/
+*.pyc
+.DS_Store

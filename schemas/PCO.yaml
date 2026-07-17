@@ -1,0 +1,177 @@
+# ============================================================================
+# Schema: PCO (Potential Change Order) record frontmatter
+# ============================================================================
+#
+# WHAT A PCO IS
+#   A PCO is a priced change. The lifecycle of one change:
+#       Change (CE) --priced--> PCO --bundled-into--> PCCO --executed-via--> Amendment
+#   One Change may produce several PCOs (a revision re-prices). A PCCO bundles
+#   several PCOs. The PCO is the stage where a cost figure first exists.
+#
+# WHY cost_layers / markup_audit EXIST
+#   The GC bills the owner the subcontractor's cost PLUS the GC's own insurance
+#   and fee. An A102 exhibit fixes the rates the GC may charge. cost_layers
+#   records that build; markup_audit recomputes it at the contract rates and
+#   flags any overcharge. This is the one forensic feature on the PCO record.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a PCO record may contain.
+#   To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema PCO vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while the other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 3
+
+# --- REQUIRED: every PCO record must carry all 12 of these ---
+required:
+  type: enum [PCO]
+  id: string                       # PCO-NNN  (PCO-NNN.N for a revision; the id itself carries the revision)
+  title: string                    # 'PCO #NNN, <plain description>'
+  status: enum [draft, priced, open-pending, open-approved, superseded, withdrawn, rejected, unknown]
+  date: date                       # PCO pricing / issue date
+  pco_number: number               # NNN as a number (NNN.N for a revision), used for sorting
+  source_files: list               # what this record was built from, see source_files_item
+  references: list                 # outbound graph edges, see references_item
+  referenced_by: list              # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                     # append-only timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source document supports them ---
+optional:
+  priced_amount: number             # the PCO total the GC billed the owner (cover-sheet "Total Amount").
+                                     #   Nearly every PCO has one; absence means the figure was not in the source.
+  sub_cost: number                  # the subcontractor's pre-markup quote (sum of line subtotals)
+  sub_vendor: string                # primary subcontractor on the PCO, e.g. 'Summit Steel'
+  cost_layers: object               # GC markup build, structure defined in cost_layers_format below
+  markup_audit: object              # computed markup check, structure defined in markup_audit_item below
+  smartsheet: object                # live state mirrored from the Smartsheet PCO Log, see smartsheet_block below.
+                                     #   Present only on PCOs that appear in a SmartsheetPCOLog snapshot. The
+                                     #   cost fields above come from the GC's PCO Pricing PDFs; this block is the
+                                     #   orthogonal live negotiation layer (status / ball-in-court / current amount /
+                                     #   comment thread). Overwritten wholesale on each pull (always reflects the
+                                     #   latest snapshot named in smartsheet.snapshot_date). Added in v3.
+
+# --- nested: the shape of each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, prose-spec, prose-snapshot, structured-canonical, image-drawing]
+  optional:
+    sidecar: string                 # required for every prose-* type
+    snapshot_date: date             # required for prose-snapshot
+
+# --- nested: the shape of each entry in references[] ---
+references_item:
+  required:
+    target: string                  # relative path to a record or topic, e.g. records/changes/Change-0455.md
+    relationship: enum [prices-ce, triggered-by-asi, triggered-by-rfi, bundled-into-pcco, supersedes, references, uses-sub-quote, mentions, cascade-from-proximate, same-asi-different-trade, same-forensic-chain]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+  # 'prices-ce' is canonical; the deprecated v1 name 'priced-from-ce' is migrated away in v2.
+  # The last three (cluster relationships) are loose vocabulary, candidates for later consolidation.
+
+# --- nested: the shape of each entry in events[] (append-only timeline) ---
+events_item:
+  required:
+    date: date
+    type: enum [priced, revised, bundled, approved, withdrawn, superseded, corrected]
+    note: string
+  optional:
+    by: string                      # who made the change
+
+# --- cost_layers: a format-tagged object. Two markup eras exist in the corpus. ---
+#   Every cost_layers block MUST carry `format`. The other keys depend on it.
+#   NOTE: the gc_* field names are role-generic substitutions for the GC's
+#   own labeled markup lines.
+cost_layers_format:
+  always:
+    format: enum [older-era, ccip-era]
+    sub_cost: number
+  when_format_is_older-era:          # earlier markup stack
+    construction_contingency: number
+    construction_contingency_rate: number
+    builders_risk_insurance: number
+    builders_risk_insurance_rate: number
+    gc_core_policy_gl: number
+    gc_core_policy_gl_rate: number
+    sdi: number
+    sdi_rate: number
+    contractor_fee: number
+    contractor_fee_rate: number
+  when_format_is_ccip-era:           # later CCIP markup stack (e.g. PCO 217)
+    gc_insurance_ccip: number
+    gc_insurance_ccip_rate: number
+    gc_insurance_sdi: number
+    gc_insurance_sdi_rate: number
+    gc_builder_fee: number
+    gc_builder_fee_rate: number
+
+# --- markup_audit: the computed check of GC markup vs the A102 exhibit rate stack ---
+markup_audit_item:
+  required:
+    authorized_total: number         # the price recomputed at the A102 exhibit contract rates
+    actual_total: number             # what the GC actually billed
+    delta: number                    # actual_total - authorized_total; a positive delta is an overcharge candidate
+    delta_pct: number
+    flag: enum [within-stack, over-stack, under-stack, unaudited]
+  optional:
+    declared_rate_total: number      # appears on the older-era format only
+
+# --- smartsheet: live state mirrored from the Smartsheet PCO Log (PCO v3) ---
+#   Sourced from the SmartsheetPCOLog snapshot named in snapshot_date. The
+#   matching SmartsheetPCOLog record is added to this PCO's source_files[] as
+#   structured-canonical and to references[] (captures-pco inbound). This block
+#   is replaced wholesale on every pull; it always mirrors the latest snapshot.
+smartsheet_block:
+  always:
+    snapshot_date: date              # date of the SmartsheetPCOLog snapshot this block came from
+    status: string                   # raw Smartsheet Status, e.g. "Pending" | "Approved" | "Void" | null
+  optional:
+    ball_in_court: string            # party owing the next move: Owner / GC / AOR / structural engineer / MEP engineer / etc.
+    priority: string                 # "High" | "Urgent" | null
+    submitted_date: date             # PCO Submitted Date
+    aging_days: number               # Days Since PCO Submission at snapshot date
+    original_amount: number          # Original PCO Amount
+    current_amount: number           # Current PCO Amount (the negotiated value)
+    rfi_asi_ce: string               # the raw "RFI, ASI, or CE #" cell, e.g. "RFI #1204" / "CE 455, RFI 1204"
+    procore_url: string              # deep-link to the PCO in Procore
+    procore_pco_id: number           # Procore numeric PCO id
+    procore_pco_no: string           # Procore PCO No.
+    procore_pco_rev: number          # Procore PCO Rev.
+    comment_thread: string           # verbatim Comments-cell text (the dated negotiation thread)
+    attachments: list                # from the export's Comments tab, list of {url, author, posted}
+
+# ============================================================================
+# CHANGELOG
+#   v3  Added the `smartsheet:` optional block (one top-level key) to mirror
+#       the live negotiation layer from the SmartsheetPCOLog snapshot type
+#       onto matching PCO records. Holds Smartsheet Status, Ball in Court,
+#       Original/Current amount, aging, Procore deep-links and the verbatim
+#       comment thread. Orthogonal to the existing cost-build fields
+#       (priced_amount / cost_layers / markup_audit), which come from the GC's
+#       PCO Pricing PDFs. Replaced wholesale on each pull. Decision journaled
+#       in log.md (ingest design "both layers"). Handler:
+#       .claude/scripts/ingest_smartsheet_pco_log.py.
+#   v2  Reconciled the schema to the actual corpus after the two seed
+#       generations (snapshot-sourced vs PDF-sourced) had diverged.
+#       Removed: a machine-generated analysis layer found unsalvageable;
+#         machine-derived heuristic tags; several fields declared but used by
+#         zero records; and scalar echoes of triggering CE/RFI/ASI links now
+#         recorded only in references[].
+#       Renamed: amount -> priced_amount; the references relationship
+#         'priced-from-ce' -> 'prices-ce'.
+#       Added: pco_number and events promoted to required; events_item shape
+#       formalized; cost_layers gains a required `format` discriminator;
+#       status enum gains open-pending / open-approved (the values the
+#       snapshot-sourced records actually use); schema_version and the
+#       governance header.
+#   v1  Original seed schema. Had drifted badly: it declared fields no record
+#       used and omitted fields most records carried.
+# ============================================================================

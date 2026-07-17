@@ -1,0 +1,113 @@
+# ============================================================================
+# Schema: Submittal record frontmatter
+# ============================================================================
+#
+# WHAT A Submittal RECORD IS  (current state of the type)
+#   The Submittal type currently holds submittal-LOG snapshot records, not
+#   individual submittals: the GC's weekly "Upcoming Review" submittal-log
+#   reports, ad-hoc distribution-log xlsx shares, per-spec-section submittal
+#   PDFs, and the full Procore submittal-log CSV export. Each record captures
+#   a batch of submittal rows (`rows_extracted` carries the row count).
+#
+#   Per-submittal letter records (one record per individual submittal, the
+#   RFI-style snapshot+letter two-tier model) are a planned future addition,
+#   deferred until individual submittal transmittals are archived. When that
+#   ingestion pattern is built, this schema will be re-reconciled to add the
+#   per-submittal fields back.
+#
+#   The id is `SUB-NNNN`; for the current log-snapshot records the NNNN is a
+#   date code (MMDD) or spec-section-derived, not an individual submittal
+#   number. `status` is `unknown` on all current records; a log snapshot has
+#   no single submittal status; the enum awaits the per-submittal buildout.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Submittal record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Submittal vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Submittal record must carry all 10 of these ---
+required:
+  type: enum [Submittal]
+  id: string                        # SUB-NNNN
+  title: string
+  status: enum [open, approved, approved-as-noted, rejected, revise-and-resubmit, closed, void, unknown]
+  date: date                        # log/snapshot date
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when supported ---
+optional:
+  rows_extracted: integer            # number of submittal rows in the log/snapshot
+  subject: string
+  spec_section: string               # CSI section number, e.g. "26 50 00", for a per-spec submittal log
+  events: list                       # lifecycle observations, append-only, see events_item
+  notes: string
+
+# Naming convention: SUB-NNNN.md or Submittal-Snapshot-{source}-YYYY-MM-DD.md
+# Originals subfolder: Originals/submittals/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-snapshot, structured-canonical, image-drawing]
+  optional:
+    sidecar: string                  # required for prose-* types; structured-canonical (xlsx/CSV) has none
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [references-rfi, references-asi, against-spec, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# --- nested: each entry in events[] (append-only) ---
+events_item:
+  required:
+    date: date
+    type: enum [submittal-opened, observed, letter-received, responded, closed, reopened]
+    detail: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. The v1 schema header marked Submittal a future entity type with
+#       no standalone submittal PDFs in the corpus yet; in fact a population
+#       of records existed, all submittal-LOG snapshots. The schema was
+#       reconciled to that reality.
+#       Removed the per-submittal optional fields used by zero records:
+#         submittal_number, revision, responder, response_status, due_date,
+#         response_date. They belong to the deferred per-submittal-letter
+#         model and will be re-added when that ingestion pattern is built.
+#       The migration stripped the enrichment probe family from the records:
+#         a per-status count family, a unique-numbers counter, a snapshot
+#         source tag, the extraction-quality tag, and the enrichment
+#         bookkeeping fields. Bodies: removed the probe-echo "## Extracted
+#         fields" sections; the rich Procore-snapshot body was kept.
+#       Kept and declared: `rows_extracted` (the log row count, a real
+#         snapshot aggregate, the Submittal analogue of PunchList
+#         total_items).
+#       Added: `structured-canonical` to the source_files type enum (the
+#         xlsx / CSV log records use it); `sidecar` made optional;
+#         schema_version; the governance header; the events_item shape; this
+#         changelog.
+#       KNOWN-BAD (registered in .claude/health/known-bad-records.md): the
+#         log-snapshot records are thin (status `unknown`, stub bodies); the
+#         per-submittal-letter buildout is the path to real per-submittal
+#         data.
+#   v1  Original seed schema. Marked Submittal a pre-wire future type;
+#       declared a per-submittal field set that no record used.
+# ============================================================================

@@ -1,0 +1,24 @@
+# Schema: topic page frontmatter
+# Used by /lint-wiki rule 1 (for topics) and rule 6 (freshness)
+
+required:
+  type: enum [topic]
+  slug: string                      # kebab-case; matches filename minus .md
+  title: string
+  status: enum [active, resolved, dormant]
+  source_records: list[string]      # paths to records/{class}/{ID}.md; non-empty
+  last_synthesized: date
+  synthesized_by: string
+
+optional:
+  notes: string                     # caveats about scope, contradictions, etc.
+  snapshot_cadence: string          # if set, this Topic is a recurring-Output source.
+                                    # e.g. "monthly", "per OAC", "quarterly". Each
+                                    # snapshot ships as a new dated immutable Output;
+                                    # the Topic itself stays live. See CLAUDE.md
+                                    # "Topics vs Outputs" decision rule.
+  load_bearing_inferences: list     # every {infer}-tagged claim a downstream Output
+                                    # depends on, with its supporting citations.
+                                    # Populated by .claude/scripts/audit_attribution.py
+                                    # during the attribution backfill pass
+                                    # (constitution.md section 5).

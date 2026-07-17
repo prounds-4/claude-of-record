@@ -1,0 +1,116 @@
+# ============================================================================
+# Schema: Subcontract record frontmatter
+# ============================================================================
+#
+# WHAT A Subcontract IS
+#   A subcontractor or direct-consultant agreement. Two populations:
+#     - the GC's subcontracts (Summit Steel structural steel, TrueTest Labs
+#       testing, etc.)
+#     - the owner's direct consultant agreements (Bluewater Environmental,
+#       Lakeside Planning, owner's counsel, etc.)
+#   Distinct from BaseContract (the prime contract / architect agreement) and
+#   from SubcontractCO (a change order that MODIFIES a Subcontract).
+#   Source: Originals/contracts/Subcontracts/.
+#
+# WHAT A Subcontract'S references[] ARE
+#   references[] is the single home of the outbound graph:
+#   `implements-bid-package` to the BidPackage the buyout fulfills,
+#   `supersedes` to a prior agreement. The inbound side (referenced_by) is
+#   auto-maintained and carries whatever relationship the citing record
+#   declared (Change / Correspondence / topic records cite Subcontracts with
+#   `mentions`, `discusses`, `surfaces-admission-about`, etc.).
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Subcontract record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Subcontract vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Subcontract record must carry all 10 of these ---
+required:
+  type: enum [Subcontract]
+  id: string                        # Subcontract-{vendor-slug}-{scope-slug}-YYYY-MM-DD
+  title: string
+  status: enum [active, expired, terminated, superseded]
+  date: date                        # contract date
+  source_files: list                # see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  vendor: string                    # firm name
+  contracting_party: enum [GC, Owner, Architect, AOR]   # who contracted with the vendor.
+                                    # Role-generic substitution for the project's real party names.
+  scope: string                     # 1-2 sentence scope description
+  trade: string                     # CSI division if applicable
+  contract_amount: number           # NTE / contract sum
+  contract_term: string             # duration / completion date
+  bid_package: string               # BP number if linked to a bid package (BP-4, etc.)
+  related_bid_package: string       # path to a BidPackage Record if one exists
+  subcontract_number: string        # the contractor's subcontract number (e.g. "12345-67890-OS")
+  docusign_envelope_id: string      # DocuSign envelope GUID, e-signature provenance
+  notes: string
+
+# Naming convention: Subcontract-{vendor-slug}-{scope-slug}-YYYY-MM-DD.md
+# Example: Subcontract-Summit-Steel-Structural-Steel-2024-02-10.md
+# Originals subfolder: Originals/contracts/Subcontracts/{vendor}/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata]
+  optional:
+    sidecar: string                 # .pdf sources carry .txt sidecars; some .docx sources do not
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [implements-bid-package, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus (GC subcontracts + owner
+#       direct-consultant agreements) in a full-type reconciliation pass.
+#       The migration stripped from the records: the enrichment bookkeeping
+#       fields and a probe-extraction family (document kind, dollar counts,
+#       largest dollar value, signature-keyword flag, text chars). The
+#       largest-dollar probe was demonstrably unreliable: on one consultant
+#       record two grabs of "the largest dollar in the text" disagreed with
+#       each other by orders of magnitude on the same record. Two real fields
+#       the probe had surfaced were KEPT and newly declared:
+#       `subcontract_number` and `docusign_envelope_id` (both present only on
+#       the hand-built structural-steel record, genuine, verifiable contract
+#       provenance, not garbage). The references relationship enum was
+#       reconciled to the two lineage values that belong on a Subcontract's
+#       outbound side (implements-bid-package, supersedes);
+#       `modified-by-amendment` was removed. Subcontract modification is
+#       modeled on the inbound side by SubcontractCO's `modifies-subcontract`
+#       edge, so an outbound mirror was graph duplication. `source_files_item`
+#       `sidecar` moved to optional (some .docx sources carry no .txt
+#       sidecar). Bodies: removed the probe-echo "## Extracted fields"
+#       (whose figures contradicted frontmatter) and the hand-rendered
+#       "## References (outbound)" section; the stub records had their
+#       malformed Summaries regenerated; the one hand-built record (the
+#       structural-steel subcontract, with cost recapitulation, scope
+#       highlights, key contract terms, embedded scope allowances, notes)
+#       kept its body verbatim. Added schema_version, the governance header,
+#       this changelog. Required (10) field set unchanged.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off. references enum carried an unused `modified-by-amendment`;
+#       `sidecar` was required.
+# ============================================================================

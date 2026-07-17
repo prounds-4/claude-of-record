@@ -1,0 +1,126 @@
+# ============================================================================
+# Schema: NCR (Non-Conformance Report) record frontmatter
+# ============================================================================
+#
+# WHAT AN NCR IS
+#   Formal QC documentation of work that fails to meet specification. An NCR
+#   records what was non-conforming, who flagged it, where, and how it was
+#   resolved. Forensic load is HIGH per instance: an NCR is a documented
+#   accountability event and often carries corrective cost.
+#
+#   Records are sourced from two kinds of document: a periodic NCR Log (a
+#   table of several NCRs; the first few records came from one) and a
+#   standalone single-NCR report (e.g. a testing-lab non-compliance report
+#   from TrueTest Labs), which is why some records carry the report-level
+#   fields technician / permit_no / daily_field_report_no / lab_report_date.
+#
+# WHAT AN NCR'S references[] ARE
+#   references[] is the single home of the graph: the defect it flags, the RFI
+#   or ASI that accepted the corrective action, the PCCO it triggered. There
+#   are no parallel related_pccos / related_rfis scalar lists; v1 declared them
+#   and v2 removed them as graph duplication.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an NCR record may contain.
+#   To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema NCR vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every NCR record must carry all 11 of these ---
+required:
+  type: enum [NCR]
+  id: string                        # NCR-NNNN (zero-padded 4-digit per project numbering)
+  title: string
+  status: enum [open, corrective-action-proposed, closed-accepted, closed-rejected, void, unknown]
+  date: date                        # NCR issued date
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source document supports them ---
+optional:
+  ncr_number: integer               # NNNN as a number, for sorting
+  issuer: string                    # who flagged the NCR: QA lab / inspector / the GC (e.g. TrueTest Labs)
+  location: string                  # where the non-conformance occurred
+  responsible_party: string         # subcontractor or trade flagged
+  defect_description: string        # what was non-conforming
+  spec_section: string              # CSI section violated
+  root_cause: string                # if root-cause analysis recorded
+  corrective_action: string         # remedy
+  acceptance_basis: string          # why accepted (re-inspection, owner waiver, etc.)
+  cost_impact: enum ["Yes", "No", "Unknown"]      # quoted, bare Yes/No parse as YAML booleans
+  schedule_impact: enum ["Yes", "No", "Unknown"]
+  daily_field_report_no: integer    # report-sourced NCRs: the inspector's daily field report number
+  technician: string                # report-sourced NCRs: the inspecting technician
+  permit_no: string                 # report-sourced NCRs: the building permit number cited
+  lab_report_date: date             # report-sourced NCRs: the date of the testing-lab report
+  notes: string
+
+# Naming convention: NCR-NNNN.md
+# Originals subfolder: Originals/ncrs/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, image-drawing]
+  optional:
+    sidecar: string                 # required for prose-primary
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [flags-defect, accepted-via-rfi, accepted-via-asi, triggered-pcco, supersedes]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# --- nested: each entry in events[] (append-only timeline) ---
+#   `identified` and `resolved` mirror the NCR Log's own "Date Identified" /
+#   "Date Resolved" columns.
+events_item:
+  required:
+    date: date
+    type: enum [identified, action-proposed, action-accepted, action-rejected, resolved, reopened]
+    detail: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  A small record set, created by a bulk deepen
+#       pass from an NCR Log PDF (the first few records) and a standalone
+#       testing-lab NCR report (the latest record).
+#       Migration: stripped the deepener timestamps from every record.
+#       Field-name reconciliation: the v1 schema declared `issued_by` and
+#         `scope_area`; every record uses `issuer` and `location` instead. The
+#         schema was renamed to the records' names. `location` is also the
+#         more accurate word for the values (a parking lot, a footing grid
+#         line) and both mirror the NCR Log's own column headers.
+#       Added (optional): daily_field_report_no, technician, permit_no,
+#         lab_report_date, carried by the report-sourced record (undeclared
+#         in v1), all four verified against the testing-lab non-compliance
+#         report in the verification step. They are the report-level fields a
+#         standalone single-NCR report provides.
+#       Removed (optional): related_pccos, related_rfis. They duplicated the
+#         references[] graph (triggered-pcco / accepted-via-rfi); no record
+#         used them.
+#       Fixed: cost_impact / schedule_impact enum values quoted ("Yes"/"No"/
+#         "Unknown"). Bare Yes/No parse as YAML booleans (the Norway problem).
+#       Added: the events_item shape (v1 listed event types in a trailing
+#         comment only; the records use `identified` / `resolved`, which the
+#         enum now reflects); schema_version; the governance header; this
+#         changelog. Required field set (11) unchanged.
+#   v1  (original seed)  No schema_version; the closed-world check was off.
+#       Declared issued_by / scope_area (used by no record) and related_pccos
+#       / related_rfis (graph duplication).
+# ============================================================================

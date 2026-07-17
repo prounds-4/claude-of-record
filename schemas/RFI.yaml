@@ -1,0 +1,129 @@
+# ============================================================================
+# Schema: RFI (Request for Information) record frontmatter
+# ============================================================================
+#
+# WHAT AN RFI IS
+#   One Request for Information raised on the project (or a revision of one,
+#   e.g. RFI-1204.1). Two-tier source model: the Procore CSV export snapshot
+#   owns the status / lifecycle, the individual response letter owns the Q&A
+#   content. The body carries the full ## Question / ## Responses /
+#   ## Resolution and the ## Procore export snapshot.
+#
+# WHAT AN RFI's references[] ARE
+#   references[] is the outbound graph: `triggered-pco` to a PCO the RFI
+#   spawned, `mentions-ce` to a CE named in the RFI. The inbound side
+#   (referenced_by) is auto-maintained and is dense; Change, OAC, FieldReport,
+#   PCCO and other RFIs all cite RFIs.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an RFI record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema RFI vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   With every record type reconciled, the closed-world check becomes a hard
+#   failure.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every RFI record must carry all 11 of these ---
+required:
+  type: enum [RFI]
+  id: string                        # e.g. RFI-1204, RFI-1204.1 for revisions
+  title: string
+  status: enum [open, closed, void, unknown]
+  date: date                        # RFI submitted date (or first-seen-in-snapshot)
+  source_files: list                # always at least one structured-canonical or prose-snapshot
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  rfi_number: integer
+  revision: integer
+  subject: string                   # one-line subject from snapshot or letter cover
+  due_date: date
+  response_date: date
+  closed_date: date                 # a value strictly later than the cited CSV export_date marks a
+                                     # legitimate post-snapshot close (two-tier model)
+  overdue: boolean
+  response_status: enum [awaiting, responded, void, closed-no-response]
+  # closed-no-response: RFI closed administratively without a substantive
+  # written response, a forensic distinction the Procore body-enrich pass
+  # makes that the CSV Status column cannot express. Distinct from 'responded'.
+  responder: string                 # populated only when response_status: responded
+  cost_impact: enum [Yes, No, Yes-Unknown, Unknown]
+  schedule_impact: enum [Yes, No, Yes-Unknown, Unknown]
+  # cost_impact / schedule_impact: the Procore body-enrich pass may store the
+  # actual signed dollar amount or duration in lieu of the coarse enum, a
+  # richer, source-of-record representation, not a violation.
+  drawing_number: string            # primary drawing referenced in the question
+  spec_section: string              # CSI section if referenced
+  location: string                  # project location the RFI concerns (e.g. "North Lot")
+  received_from: string             # the party that raised the RFI (name + firm)
+  notes: string
+
+# Naming convention: RFI-NNNN[.N].md
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-snapshot, image-drawing, structured-canonical]
+  optional:
+    sidecar: string                 # prose-* sources carry .txt sidecars; the Procore CSV does not
+    snapshot_date: date             # for prose-snapshot type
+    export_date: date               # for structured-canonical type, when the Procore export was generated
+    is_markup: boolean              # for image-drawing type, true if an AOR markup attached to an RFI
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [triggered-pco, mentions-ce]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# --- nested: each entry in events[] ---
+events_item:
+  required:
+    date: date
+    type: enum [rfi-opened, observed, closed, procore-body-enriched]
+    source: string
+    detail: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus (the largest type by record
+#       count) as the final type in a full reconciliation campaign. RFI was a
+#       comparatively clean type; the records are well-built (full
+#       ## Question / ## Responses / ## Resolution / ## Procore export
+#       snapshot bodies). The migration stripped from the records: the
+#       enrichment bookkeeping fields and extraction-quality tag; an
+#       `extracted_*` probe-twin family of five fields that duplicated the
+#       real declared fields (subject, due_date, cost_impact,
+#       schedule_impact, drawing_number); a US-format text duplicate of
+#       `date`; a point-in-time status echo (the events[] timeline owns
+#       status history); and a scalar ref-list twin of the references[]
+#       `mentions-ce` edges. Two real fields the enrichment surfaced were
+#       KEPT and newly declared: `location` and `received_from` (the party
+#       that raised the RFI). The references relationship enum was reconciled
+#       to the two values used on the outbound side (`triggered-pco`,
+#       `mentions-ce`); five unused v1 values were removed. `events_item` was
+#       formalized (type enum reconciled to the four values in use; v1's
+#       comment listed several never-used values). `source_files_item`
+#       `sidecar` moved to optional (the Procore CSV is structured-canonical
+#       with no sidecar). Bodies: removed the probe-echo and hand-rendered
+#       reference sections on a handful of records; the content sections were
+#       kept verbatim. Added schema_version, the governance header, this
+#       changelog. Required (11) field set unchanged.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off. references enum and events comment carried several never-used
+#       values.
+# ============================================================================

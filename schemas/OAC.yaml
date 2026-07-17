@@ -1,0 +1,124 @@
+# ============================================================================
+# Schema: OAC (Owner-Architect-Contractor meeting) record frontmatter
+# ============================================================================
+#
+# WHAT AN OAC IS
+#   One Owner-Architect-Contractor meeting. The recurring (typically weekly)
+#   coordination meeting between the owner, the design team, and the GC.
+#   Each OAC record is built from that meeting's minutes PDF and carries the
+#   attendee roster, the running action-item register, and (in the body) the
+#   full agenda-item discussion transcribed from the source minutes.
+#
+# WHAT AN OAC's references[] ARE
+#   references[] is the single home of the outbound graph: `discusses` to an
+#   RFI / PCO surfaced in the discussion, `surfaces` to an ASI flagged as
+#   upcoming. The inbound side (referenced_by) is auto-maintained and may
+#   carry any relationship the citing record declared (topic pages cite OAC
+#   records with `mentions`).
+#
+# WHERE THE DISCUSSION LIVES
+#   The body `## Meeting Discussion` section is the verbatim per-agenda-item
+#   transcript, extracted from the minutes by the OAC enrichment script with
+#   source line citations. It is real content, not a probe echo; the audit
+#   treats it as the prose-primary body. Hand-authored `## Forensic *`
+#   sections (added by an analyst) sit between the Summary and the Meeting
+#   Discussion and are also real content.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what an OAC record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema OAC vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every OAC record must carry all 11 of these ---
+required:
+  type: enum [OAC]
+  id: string                        # e.g. OAC-042
+  title: string                     # e.g. "OAC Meeting #42, 2025-04-29"
+  status: enum [conducted, scheduled, cancelled]
+  date: date                        # meeting date
+  meeting_number: integer
+  source_files: list                # see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source supports them ---
+optional:
+  attendees: list                   # principal attendees, see attendees_item
+  attendees_summary: string         # e.g. "design architect absent, AOR by conference, GC core present"
+  action_items: list                # the running agenda/action register, see action_items_item
+  notes: string
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    sidecar: string
+    type: enum [prose-primary, prose-snapshot, image-drawing]
+    # prose-snapshot used for a schedule attachment referenced from the OAC
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [discusses, surfaces]
+    # discusses: an RFI / PCO surfaced in the meeting discussion
+    # surfaces:  an ASI flagged as upcoming
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# --- nested: each entry in attendees[] ---
+attendees_item:
+  required:
+    name: string
+    company: string                 # firm name (bulk-extracted; on some records the
+                                     # email leaked into this field, a known data gap)
+    email: string
+    status: enum [Present, Absent]
+
+# --- nested: each entry in action_items[] ---
+action_items_item:
+  required:
+    number: string                  # the agenda item number, e.g. "4.2"
+    origin_meeting: integer          # which OAC first opened the item
+    aging_meetings: integer          # meeting_number - origin_meeting (denormalized convenience)
+    title: string
+    status: enum [open, closed, on-hold]
+  optional:
+    description: string              # brief item description
+
+# ============================================================================
+# CHANGELOG
+#   v2  Reconciled to the actual record corpus in a full-type reconciliation
+#       pass. A migration script stripped undeclared probe artifacts from the
+#       records: the derivable count family (attendee_count / present_count /
+#       absent_count, all derivable from attendees[]); enrichment-pass
+#       bookkeeping fields (deepened_at / deepened_by /
+#       action_items_deepened_at); and scalar ref-list echoes of references[].
+#       The schema was reconciled to the records' real shape: v1 declared
+#       `attendees: list[string]` but every record carries a structured
+#       attendee list, so the attendees_item nested schema was formalized;
+#       action_items_item was promoted from a comment to a real nested block
+#       and trimmed to the fields records actually carry, dropping
+#       never-populated assignment / due_date / priority. The references
+#       relationship enum was reconciled to the two values in use (discusses,
+#       surfaces); three unused values were removed along with two never-used
+#       optional fields. Bodies: probe-echo and hand-rendered reference
+#       sections removed; the Meeting Discussion transcript and hand-authored
+#       forensic sections preserved; stub Summary bodies rewritten. Added
+#       schema_version, the governance header, this changelog. Required (11)
+#       field set unchanged.
+#   v1  Original seed schema. No schema_version; the closed-world check was
+#       off. attendees declared as list[string]; nested item shapes were
+#       comment-only.
+# ============================================================================

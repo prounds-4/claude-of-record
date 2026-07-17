@@ -1,0 +1,113 @@
+# ============================================================================
+# Schema: Discrepancy record frontmatter
+# ============================================================================
+#
+# WHAT A Discrepancy IS
+#   A Discrepancy records a constitution.md section 6 source conflict: two or
+#   more sources asserting the same fact (same dollar value, date,
+#   attribution, or status) with materially different content. Per section 6
+#   the conflict is ranked by section 2/3 authority, the higher-authority
+#   source is adopted for the working claim, and the conflict is REGISTERED
+#   here rather than silently resolved. A detected conflict is a forensic
+#   asset, not an inconvenience.
+#
+# WHAT A Discrepancy'S references[] ARE
+#   The graph edges to the records and instruments in conflict: a
+#   `conflicts-with` edge to each Record at issue, a `resolves` edge to the
+#   instrument that settles it, `supersedes` / `references` as needed.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Discrepancy record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Discrepancy vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Discrepancy record must carry all 15 of these ---
+required:
+  type: enum [Discrepancy]
+  id: string                        # Discrepancy-NNNN (zero-padded 4-digit)
+  title: string                     # short statement of what is in dispute
+  status: enum [open, resolved, accepted, escalated]
+  date: date                        # date the discrepancy was identified
+  disputed_fact: string             # the single fact in conflict
+  conflicting_sources: list         # >=2 entries, see conflicting_sources_item
+  resolution: string                # which source controls + the section 2/3 rule applied,
+                                     #   or "unresolved - escalated to user" per section 6 step 5
+  residual_risk: string             # forensic exposure if the lower-authority source is right
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # the records/instruments in conflict, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when supported ---
+optional:
+  resolved_authority: string        # constitution section 2 tier / section 3 axis that broke the tie
+  notes: string
+
+# Naming convention: Discrepancy-NNNN.md  /  Originals subfolder: none (Discrepancy
+# records are wiki-internal section 6 registrations; source_files cite the conflicting Originals/).
+
+# --- nested: each entry in conflicting_sources[] (>=2; each asserts a value) ---
+conflicting_sources_item:
+  required:
+    source: string                  # path to a Record or an Originals/ source
+    tier: string                    # constitution section 2 tier or section 3 axis label
+    value: string                   # the asserted value/characterization, may be a
+                                     #   dollar figure, a date, or prose
+  optional:
+    party: string                   # party-roster id, if a party-asserted value
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [conflicts-with, resolves, supersedes, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-snapshot, structured-canonical, prose-metadata, image-drawing]
+  optional:
+    sidecar: string                 # required for every prose-* type
+
+# --- nested: each entry in events[] (append-only timeline) ---
+#   Discrepancy events carry `source` (the Record/file that surfaced or settled
+#   the conflict) and `detail`, rather than the PCO/PCCO `by`/`note` pair.
+events_item:
+  required:
+    date: date
+    type: enum [identified, ranked, escalated, resolved, accepted, superseded]
+    detail: string
+  optional:
+    source: string                  # path to the Record / file behind the event
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  One record existed at reconciliation. Drift
+#       found and fixed in the migration: three deepener-pass artifacts (an
+#       extraction-quality tag and deepener timestamps), undeclared keys,
+#       stripped (the same artifacts the PCO and PCCO reconciliations removed;
+#       reconciled records of every type carry none).
+#       Added: schema_version; the governance header; the events_item shape
+#         (v1 listed valid event types only in a trailing comment and never
+#         declared the entry shape; the record's events carry date / type /
+#         source / detail); this changelog.
+#       No required/optional field changed. The v1 seed field set
+#       (15 required, 2 optional) was sound.
+#   v1  (original seed)  Added during the wiki-hardening constitution
+#       section 6 work. No schema_version; the closed-world check was off, so
+#       the deepener artifacts went unflagged.
+# ============================================================================

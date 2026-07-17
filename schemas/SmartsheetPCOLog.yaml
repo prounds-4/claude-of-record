@@ -1,0 +1,105 @@
+# ============================================================================
+# Schema: SmartsheetPCOLog record frontmatter
+# ============================================================================
+#
+# WHAT A SmartsheetPCOLog IS
+#   A point-in-time export of the live owner/GC-collaborative Smartsheet PCO
+#   Log (<sheet-url>). One record per snapshot, date-stamped. The .xlsx
+#   export is the canonical source (structured-canonical: existence-checked
+#   only; the body cites it by row/column description, never by line number).
+#
+#   Forensic value: this is the live negotiation layer for Potential Change
+#   Orders. Unlike the GC's PCO Pricing PDFs (which carry the cost build),
+#   the Smartsheet carries the MOVING state the rest of the corpus lacks:
+#   live Status (Pending / Approved / Void), Ball in Court
+#   (who owes the next move), Current vs Original amount (the negotiation
+#   delta), aging, Procore deep-links, and a dated comment thread per PCO.
+#   Snapshot-over-time enables aging analysis and ball-in-court accountability.
+#
+#   SmartsheetPCOLog is a SNAPSHOT type, parallel to PunchList and Budget:
+#   each record is its own point-in-time capture. There is no events[]
+#   timeline; per-PCO live state is mirrored onto the matching PCO record's
+#   `smartsheet:` block (PCO schema v3), and cross-snapshot lifecycle is
+#   encoded by the supersedes-snapshot reference chain. When a newer snapshot
+#   supersedes this one: set this record's status to `superseded`, and the new
+#   record carries a `supersedes-snapshot` reference back to it.
+#
+#   PULL WORKFLOW
+#     The Smartsheet API requires a plan tier the owner account does not hold
+#     (journaled decision). The durable pull is a browser export: File ->
+#     Export -> Microsoft Excel from the logged-in sheet, save to
+#     Originals/change-orders/smartsheet/, then run
+#     .claude/scripts/ingest_smartsheet_pco_log.py.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a SmartsheetPCOLog record
+#   may contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema SmartsheetPCOLog vN: <field> added/removed because <reason>
+# ============================================================================
+
+schema_version: 1
+
+# --- REQUIRED: every SmartsheetPCOLog record must carry all 10 of these ---
+required:
+  type: enum [SmartsheetPCOLog]
+  id: string                          # SmartsheetPCOLog-Snapshot-YYYY-MM-DD
+  title: string                       # e.g. "Smartsheet PCO Log Snapshot, 2025-06-22"
+  status: enum [current, superseded, snapshot]
+  date: date                          # snapshot date (ISO YYYY-MM-DD)
+  source_files: list                  # the .xlsx export, see source_files_item
+  references: list                    # cross-refs to the PCO records it captures, see references_item
+  referenced_by: list                 # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: the snapshot's extracted aggregates; present when the export supports them ---
+optional:
+  total_rows: integer                 # total data rows in the export (incl. blank spacers)
+  pco_count: integer                  # rows carrying a PCO number
+  status_breakdown: list              # list of {status, count}
+  ball_in_court_breakdown: list       # list of {party, count}
+  priority_breakdown: list            # list of {priority, count}
+  sum_original_amount: number         # sum of Original PCO Amount across rows
+  sum_current_amount: number          # sum of Current PCO Amount across rows (Summary tab "Sum of Current TOTAL")
+  sum_current_pending: number         # Summary tab "Sum of Current PCO Amount - Pending In-Review"
+  pending_in_review_count: integer    # Summary tab "Count of Pending In-Review PCOs"
+  oldest_open_submitted_date: date    # earliest PCO Submitted Date among still-open (non-Void) rows
+  pcos_enriched: integer              # count of existing PCO records this snapshot enriched
+  pcos_created: integer               # count of new PCO records this snapshot created
+  notes: string
+
+# Naming convention: SmartsheetPCOLog-Snapshot-YYYY-MM-DD.md
+# Originals subfolder: Originals/change-orders/smartsheet/  (one .xlsx per snapshot date)
+
+# There is no events[]; SmartsheetPCOLog is a snapshot type (see header).
+# events is declared by neither required nor optional and must not appear.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [structured-canonical, prose-snapshot]   # .xlsx (canonical) or PDF (snapshot)
+  optional:
+    sidecar: string                  # required for a prose-snapshot PDF; a
+                                     #   structured-canonical .xlsx has no sidecar
+    snapshot_date: date
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [captures-pco, supersedes-snapshot, references]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested; warns, never fails lint
+
+# ============================================================================
+# CHANGELOG
+#   v1  New type. Added with the first Smartsheet PCO Log snapshot when the
+#       owner gained enduring access to the live owner/GC-collaborative
+#       Smartsheet PCO log. Decision journaled in log.md (ingest design
+#       "both layers"). The per-PCO live state is mirrored onto PCO records
+#       via the PCO v3 `smartsheet:` block.
+# ============================================================================

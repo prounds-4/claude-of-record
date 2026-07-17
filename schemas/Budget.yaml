@@ -1,0 +1,104 @@
+# ============================================================================
+# Schema: Budget record frontmatter
+# ============================================================================
+#
+# WHAT A Budget RECORD IS
+#   A point-in-time snapshot of a project budget / GMP cost-summary document.
+#   Each record is its own snapshot (parallel to PunchList); there is no
+#   events[] lifecycle. The flagship is the GMP Cost Summary exhibit
+#   (e.g. Budget-Snapshot-2025-01-15), which carries the curated total_*
+#   breakdown and per-bid-package figures; most other records are thinner
+#   snapshots.
+#
+# WHAT A Budget RECORD'S references[] ARE
+#   references[] is the single home of the graph: `funds-bid-package` to each
+#   Amendment that funded a bid package (heavy by design, a budget snapshot
+#   cross-refs many Amendments), `allowance-source` / `contingency-source`,
+#   `supersedes-snapshot` to the prior snapshot.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Budget record may
+#   contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Budget vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Budget record must carry all 10 of these ---
+required:
+  type: enum [Budget]
+  id: string                        # Budget-Snapshot-YYYY-MM-DD
+  title: string
+  status: enum [current, superseded, snapshot]
+  date: date                        # snapshot date (ISO YYYY-MM-DD)
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: the curated snapshot totals; present when the source supports them ---
+optional:
+  notes_author: string              # analyst initials/name from the annotations
+  notes_date: date                  # date of annotations, when distinct from the snapshot date
+  total_forecast: number_or_null
+  total_contracted: number_or_null
+  total_allowances: number_or_null
+  total_contingency: number_or_null
+  total_balance: number_or_null
+  bid_packages: list                # list of {id, total_forecast, total_contracted}
+  notes: string
+
+# Naming convention: Budget-Snapshot-YYYY-MM-DD.md
+# Originals subfolder: Originals/budget/{year}/
+# Budget is a snapshot type, no events[]. A newer snapshot sets this record's
+# status to `superseded` and carries a `supersedes-snapshot` reference back.
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary]       # GMP cost-summary / budget-forecast PDFs are prose-readable
+  optional:
+    sidecar: string                  # required for prose-primary
+    ocr_pdf: string
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [funds-bid-package, allowance-source, contingency-source, supersedes-snapshot]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+    bid_package: string              # which BP this Amendment funded (e.g. BP1, BP2)
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  A few dozen snapshot records. The migration
+#       stripped from the records: deepener artifacts (timestamps, an
+#       extraction-quality tag); largest-dollar and dollar-count probe fields;
+#       a `total_amount` field (a deepener single-number grab, garbage:
+#       pocket-change values on a nine-figure project, and
+#       on the flagship record the grabbed total contradicted the curated
+#       total_forecast); and the source_* probe family (text-length,
+#       date-count, document-kind, cross-ref scrapes). Bodies: the stub
+#       records had their probe-echo "Extracted fields" and hand-rendered
+#       outbound/inbound reference sections removed and a clean Summary
+#       regenerated. references[]: a handful of undeclared source-mentions
+#       edges (probe twins of a stripped scrape field) were dropped. Added
+#       schema_version, the governance header, this changelog. Required (10)
+#       and optional (9) field sets unchanged.
+#       KNOWN-BAD (registered): the snapshot totals are uncurated on all but
+#       the flagship record, which alone carries the curated total_*
+#       breakdown. A buildout pass should populate total_forecast /
+#       total_contracted / total_allowances / total_contingency from each
+#       snapshot source.
+#   v1  (original seed)  No schema_version; the closed-world check was off, so
+#       the probe family went unflagged.
+# ============================================================================

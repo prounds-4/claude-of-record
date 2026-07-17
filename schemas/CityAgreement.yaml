@@ -1,0 +1,114 @@
+# ============================================================================
+# Schema: CityAgreement record frontmatter
+# ============================================================================
+#
+# WHAT A CityAgreement IS
+#   An owner-side agreement between the owner (Ridgeline Ventures LLC) and the
+#   City, and any amendment to one. Examples: a right-of-way permit, a property-exchange
+#   agreement and its amendments, a plan-review services agreement, revocable
+#   permits for foundation / landscape / lighting in the right-of-way.
+#   It captures owner obligations to the City. Forensic relevance is HIGH if an
+#   owner-obligation dispute emerges.
+#
+#   CityAgreement is distinct from two neighbours:
+#     - BaseContract / Amendment: the GC and architect prime agreements.
+#     - Permit: municipally issued building permits. A City *agreement* (a
+#       negotiated instrument) is a CityAgreement; a City-issued *permit*
+#       is a Permit, even when the permitting party is also the City.
+#
+# WHAT A CityAgreement'S references[] ARE
+#   The graph edges to the records this agreement amends, supersedes, or
+#   otherwise relates to (a parent agreement, a Permit, an ASI, a Subcontract
+#   it is paired with). references[] is the single home for those edges.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a CityAgreement record
+#   may contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema CityAgreement vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every CityAgreement record must carry all 11 of these ---
+required:
+  type: enum [CityAgreement]
+  id: string                        # CityAgreement-{slug}-YYYY-MM-DD or CityAgreement-{slug}-Amendment-NN-YYYY-MM-DD
+  title: string
+  status: enum [active, expired, terminated, superseded]
+  date: date                        # agreement date / execution date
+  source_files: list                # what the record was built from, see source_files_item
+  references: list                  # outbound graph edges, see references_item
+  referenced_by: list               # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                      # append-only timeline, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when the source document supports them ---
+optional:
+  agreement_subject: string         # plan review, right-of-way permit, utility easement, etc.
+  city_party: string                # the specific City department (Public Works, Planning, etc.)
+  parent_agreement: string          # for an amendment: relative path to the parent CityAgreement record
+  amendment_number: integer         # NN if this record is an amendment
+  exhibit_letters: list             # exhibit identifiers (A, A-1, B, C, etc.)
+  obligations: string               # owner obligations summary
+  contingencies: string             # contingencies / conditions
+  notes: string
+
+# Naming convention:
+#   Base:      CityAgreement-{slug}-YYYY-MM-DD.md       (e.g. CityAgreement-Land-Transfer-2023-12-01.md)
+#   Amendment: CityAgreement-{slug}-Amendment-NN-YYYY-MM-DD.md
+# Originals subfolder: Originals/contracts/City-Agreements/
+
+# --- nested: the shape of each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    type: enum [prose-primary, prose-metadata, structured-canonical, image-drawing]
+  optional:
+    sidecar: string                 # required for every prose-* type
+
+# --- nested: the shape of each entry in references[] ---
+references_item:
+  required:
+    target: string                  # relative path to a record, e.g. records/contracts/CityAgreement-Land-Transfer-2023-12-01.md
+    relationship: enum [amends-parent, references-permit, references-asi, supersedes, relates-to]
+  optional:
+    status: enum [pending-target]    # target record not yet ingested, warns, never fails lint
+  # `relates-to` is the catch-all for an edge the four specific relationships do
+  # not cover (e.g. a CityAgreement paired with a Subcontract or a Budget).
+
+# --- nested: the shape of each entry in events[] (append-only timeline) ---
+events_item:
+  required:
+    date: date
+    type: enum [executed, amended, modified, superseded, terminated, expired]
+    note: string
+  optional:
+    by: string
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  CityAgreement is a pre-wired type with zero
+#       ingested records, so this was a schema-review pass only, no record
+#       migration or factual re-verification. The v1 seed field set
+#       (11 required, 8 optional) was sound and is kept unchanged.
+#       Changed:
+#         - source_files type enum broadened from [prose-primary, prose-metadata]
+#           to add structured-canonical and image-drawing. The land-transfer
+#           source folder demonstrably holds budget xlsx exhibits and
+#           concept-plan drawings, which the two-type enum could not express.
+#         - references relationship enum gains `relates-to`, a measured
+#           catch-all. The land-transfer agreement relates to records the four
+#           specific relationships cannot express (e.g. a paired surveying
+#           subcontract).
+#       Added: schema_version; the governance header; events_item (v1 declared
+#         events as a list but never defined the entry shape); this changelog.
+#   v1  (original seed)  Declared CityAgreement as a pre-wired future type; no
+#       records were ever ingested against it.
+# ============================================================================

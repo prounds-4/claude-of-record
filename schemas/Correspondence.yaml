@@ -1,0 +1,101 @@
+# ============================================================================
+# Schema: Correspondence record frontmatter
+# ============================================================================
+#
+# WHAT A Correspondence IS
+#   Forensically significant correspondence, typically an email thread, also
+#   letters and memos, that carries admissions, contractual posture, dollar
+#   figures, or attribution not derivable from the contract instruments alone.
+#   One record per thread, not per message. Each message in the thread is an
+#   events[] entry (oldest -> newest), with verbatim quotes where the language
+#   is consequential.
+#
+# WHAT A Correspondence'S references[] ARE
+#   references[] is the single home of the graph: the Changes, ASIs, RFIs,
+#   PayApps, PCCOs, Amendments, Inspections, and other records the thread
+#   discusses, contests, accepts, or attaches.
+#
+# HOW TO CHANGE THIS SCHEMA  (governance)
+#   This file is the single source of truth for what a Correspondence record
+#   may contain. To change it:
+#     1. edit this file,
+#     2. bump schema_version below,
+#     3. add a log.md entry:
+#        ## [date] decision | schema Correspondence vN: <field> added/removed because <reason>
+#   The audit's closed-world check flags any frontmatter key not declared here.
+#   That check is warn-only while other record types are still being
+#   reconciled; it becomes a hard failure once they all are.
+# ============================================================================
+
+schema_version: 2
+
+# --- REQUIRED: every Correspondence record must carry all 14 of these ---
+required:
+  type: enum [Correspondence]
+  id: string                          # e.g. Correspondence-2026-02-10-Cost-Log-Summary
+  title: string                       # subject line of the most-recent message in the thread
+  status: enum [open, resolved, informational, unknown]
+  date: date                          # date of the most-recent message in the thread
+  parties_from: list                  # senders across the thread (deduped)
+  parties_to: list                    # recipients across the thread (deduped; To + Cc combined)
+  subject_line: string                # canonical subject (Re:/Fwd: prefixes stripped)
+  source_files: list                  # what the record was built from, see source_files_item
+  references: list                    # outbound graph edges, see references_item
+  referenced_by: list                 # inbound edges, auto-maintained by /resolve-refs, never hand-edited
+  events: list                        # one entry per message in the thread, oldest -> newest, see events_item
+  ingested_at: date
+  ingested_by: string
+
+# --- OPTIONAL: present only when supported ---
+optional:
+  thread_message_count: integer        # convenience; number of messages in the thread
+  forwarded_by: string                 # who forwarded an internal thread to owner's counsel (e.g. an owner advisor)
+  notes: string
+
+# Naming convention: Correspondence-YYYY-MM-DD-{slug}.md  (date = most-recent message)
+# Originals subfolder: Originals/correspondence/{year}/
+
+# --- nested: each entry in source_files[] ---
+source_files_item:
+  required:
+    path: string
+    sidecar: string
+    type: enum [prose-primary]
+
+# --- nested: each entry in references[] ---
+references_item:
+  required:
+    target: string
+    relationship: enum [discusses, surfaces-admission-about, contests, approves, conditionally-approves, references, forwards, attaches]
+  optional:
+    status: enum [pending-target]      # target record not yet ingested, warns, never fails lint
+
+# --- nested: each entry in events[] (one per message, oldest -> newest) ---
+events_item:
+  required:
+    type: enum [message-sent, forwarded, admission-recorded, action-promised, reservation-of-rights]
+    date: date
+    from: string                      # sender name, or "thread" for a thread-level event
+    summary: string                   # 1-3 sentence paraphrase
+    source: string                    # sidecar path + line range, e.g. "Originals/correspondence/2026/Foo.txt:12-30"
+  optional:
+    to: list                          # recipients, present when material
+    verbatim_quote: string             # exact language, quoted when an admission / posture / figure matters
+
+# ============================================================================
+# CHANGELOG
+#   v2  (schema reconciliation)  A small set of records, all hand-authored
+#       thread syntheses with inline line-cited quotes. The migration stripped
+#       the deepener artifacts (an extraction-quality tag on every record, and
+#       deepener timestamps on the records predating the bulk deepen pass),
+#       all undeclared keys. The records' bodies were left intact: the
+#       "## Cross-references" sections are narrative analysis, not a
+#       referenced_by echo, and stay.
+#       Added: schema_version; the governance header; the events_item shape
+#         (v1 carried the event-type list and the events_item fields only in
+#         trailing comments, now a declared block); this changelog. The
+#         required (14) and optional (3) field sets are unchanged from v1.
+#   v1  (original seed)  Added when the Correspondence type was formalized.
+#       No schema_version; the closed-world check was off, so the deepener
+#       artifacts went unflagged.
+# ============================================================================
